@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import AppLayout from "@/components/layout/AppLayout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Setup from "./pages/Setup";
 import Dashboard from "./pages/Dashboard";
 import Alunos from "./pages/Alunos";
 import ControleAcesso from "./pages/ControleAcesso";
@@ -29,14 +30,15 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/setup" element={<Setup />} />
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/alunos" element={<Alunos />} />
-              <Route path="/controle-acesso" element={<ControleAcesso />} />
-              <Route path="/relatorios" element={<Relatorios />} />
+              <Route path="/dashboard" element={<ProtectedRoute permissions={["dashboard.view"]}><Dashboard /></ProtectedRoute>} />
+              <Route path="/alunos" element={<ProtectedRoute permissions={["alunos.view"]}><Alunos /></ProtectedRoute>} />
+              <Route path="/controle-acesso" element={<ProtectedRoute permissions={["acesso.registrar"]}><ControleAcesso /></ProtectedRoute>} />
+              <Route path="/relatorios" element={<ProtectedRoute permissions={["relatorios.view"]}><Relatorios /></ProtectedRoute>} />
               <Route path="/ajuda" element={<Ajuda />} />
-              <Route path="/usuarios" element={<ProtectedRoute roles={["admin"]}><Usuarios /></ProtectedRoute>} />
-              <Route path="/perfis" element={<ProtectedRoute roles={["admin"]}><Perfis /></ProtectedRoute>} />
+              <Route path="/usuarios" element={<ProtectedRoute permissions={["usuarios.view"]}><Usuarios /></ProtectedRoute>} />
+              <Route path="/perfis" element={<ProtectedRoute permissions={["perfis.manage"]}><Perfis /></ProtectedRoute>} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

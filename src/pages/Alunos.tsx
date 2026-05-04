@@ -34,7 +34,10 @@ const schema = z.object({
 });
 
 export default function Alunos() {
-  const { isGestao, hasRole } = useAuth();
+  const { can } = useAuth();
+  const canCreate = can("alunos.create");
+  const canUpdate = can("alunos.update");
+  const canDelete = can("alunos.delete");
   const [list, setList] = useState<Aluno[]>([]);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -90,7 +93,7 @@ export default function Alunos() {
           <h1 className="text-2xl font-bold">Alunos</h1>
           <p className="text-muted-foreground">Cadastro completo da instituição</p>
         </div>
-        {isGestao && (
+        {canCreate && (
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
             <DialogTrigger asChild>
               <Button><Plus className="h-4 w-4 mr-2" />Novo aluno</Button>
@@ -167,12 +170,12 @@ export default function Alunos() {
                     <Badge variant={a.status === "ativo" ? "default" : "secondary"}>{a.status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {isGestao && (
+                    {canUpdate && (
                       <Button variant="ghost" size="icon" onClick={() => { setEditing(a); setOpen(true); }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}
-                    {hasRole("admin") && (
+                    {canDelete && (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="ghost" size="icon" className="text-destructive">

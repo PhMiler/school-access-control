@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_profiles: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          id: string
+          is_admin: boolean
+          is_system: boolean
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          is_admin?: boolean
+          is_system?: boolean
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          is_admin?: boolean
+          is_system?: boolean
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       acessos: {
         Row: {
           aluno_id: string | null
@@ -94,75 +124,113 @@ export type Database = {
         }
         Relationships: []
       }
+      permissions: {
+        Row: {
+          categoria: string
+          key: string
+          label: string
+        }
+        Insert: {
+          categoria: string
+          key: string
+          label: string
+        }
+        Update: {
+          categoria?: string
+          key?: string
+          label?: string
+        }
+        Relationships: []
+      }
+      profile_permissions: {
+        Row: {
+          permission_key: string
+          profile_id: string
+        }
+        Insert: {
+          permission_key: string
+          profile_id: string
+        }
+        Update: {
+          permission_key?: string
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_permissions_permission_key_fkey"
+            columns: ["permission_key"]
+            isOneToOne: false
+            referencedRelation: "permissions"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "profile_permissions_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "access_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
+          access_profile_id: string | null
+          ativo: boolean
           created_at: string
           email: string
           id: string
           nome: string
+          numero_usuario: string | null
           updated_at: string
         }
         Insert: {
+          access_profile_id?: string | null
+          ativo?: boolean
           created_at?: string
           email: string
           id: string
           nome: string
+          numero_usuario?: string | null
           updated_at?: string
         }
         Update: {
+          access_profile_id?: string | null
+          ativo?: boolean
           created_at?: string
           email?: string
           id?: string
           nome?: string
+          numero_usuario?: string | null
           updated_at?: string
         }
-        Relationships: []
-      }
-      user_roles: {
-        Row: {
-          created_at: string
-          id: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          role?: Database["public"]["Enums"]["app_role"]
-          user_id?: string
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_access_profile_id_fkey"
+            columns: ["access_profile_id"]
+            isOneToOne: false
+            referencedRelation: "access_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      current_user_roles: {
-        Args: never
-        Returns: Database["public"]["Enums"]["app_role"][]
+      current_user_permissions: { Args: never; Returns: string[] }
+      has_permission: { Args: { _key: string; _uid: string }; Returns: boolean }
+      is_admin: { Args: { _uid: string }; Returns: boolean }
+      resolve_login_identifier: {
+        Args: { _identifier: string }
+        Returns: string
       }
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
-      is_gestao: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
       acesso_metodo: "biometria" | "manual"
       acesso_status: "valido" | "invalido"
       acesso_tipo: "entrada" | "saida"
       aluno_status: "ativo" | "inativo"
-      app_role: "diretor" | "gestor" | "professor" | "admin" | "rh"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -294,7 +362,6 @@ export const Constants = {
       acesso_status: ["valido", "invalido"],
       acesso_tipo: ["entrada", "saida"],
       aluno_status: ["ativo", "inativo"],
-      app_role: ["diretor", "gestor", "professor", "admin", "rh"],
     },
   },
 } as const
