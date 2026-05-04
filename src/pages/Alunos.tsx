@@ -170,7 +170,7 @@ export default function Alunos() {
                     <Badge variant={a.status === "ativo" ? "default" : "secondary"}>{a.status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {canCreate && (
+                    {canUpdate && (
                       <Button variant="ghost" size="icon" onClick={() => { setEditing(a); setOpen(true); }}>
                         <Pencil className="h-4 w-4" />
                       </Button>
