@@ -35,7 +35,7 @@ export default function Auth() {
     const parsed = loginSchema.safeParse(Object.fromEntries(form));
     if (!parsed.success) { toast.error(parsed.error.errors[0].message); return; }
     setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
+    const { error } = await supabase.auth.signInWithPassword({ email: parsed.data.email!, password: parsed.data.password! });
     setBusy(false);
     if (error) toast.error(error.message); else toast.success("Bem-vindo!");
   };
@@ -47,8 +47,8 @@ export default function Auth() {
     if (!parsed.success) { toast.error(parsed.error.errors[0].message); return; }
     setBusy(true);
     const { error } = await supabase.auth.signUp({
-      email: parsed.data.email,
-      password: parsed.data.password,
+      email: parsed.data.email!,
+      password: parsed.data.password!,
       options: {
         emailRedirectTo: `${window.location.origin}/dashboard`,
         data: { nome: parsed.data.nome },

@@ -52,7 +52,13 @@ export default function Alunos() {
     const fd = new FormData(e.currentTarget);
     const parsed = schema.safeParse(Object.fromEntries(fd));
     if (!parsed.success) { toast.error(parsed.error.errors[0].message); return; }
-    const payload = parsed.data;
+    const payload = {
+      nome: parsed.data.nome!,
+      matricula: parsed.data.matricula!,
+      curso: parsed.data.curso!,
+      turma: parsed.data.turma!,
+      status: parsed.data.status!,
+    };
     if (editing) {
       const { error } = await supabase.from("alunos").update(payload).eq("id", editing.id);
       if (error) return toast.error(error.message);
