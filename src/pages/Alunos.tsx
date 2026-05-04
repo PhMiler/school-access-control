@@ -34,7 +34,10 @@ const schema = z.object({
 });
 
 export default function Alunos() {
-  const { isGestao, hasRole } = useAuth();
+  const { can } = useAuth();
+  const canCreate = can("alunos.create");
+  const canUpdate = can("alunos.update");
+  const canDelete = can("alunos.delete");
   const [list, setList] = useState<Aluno[]>([]);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
