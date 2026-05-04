@@ -2,17 +2,33 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-export type AppRole = "diretor" | "gestor" | "professor" | "admin" | "rh";
+export type PermissionKey =
+  | "dashboard.view"
+  | "usuarios.view" | "usuarios.create" | "usuarios.update" | "usuarios.delete"
+  | "perfis.manage"
+  | "alunos.view" | "alunos.create" | "alunos.update" | "alunos.delete"
+  | "relatorios.view"
+  | "acesso.registrar";
+
+interface ProfileRow {
+  id: string;
+  nome: string;
+  email: string;
+  numero_usuario: string | null;
+  ativo: boolean;
+  access_profile_id: string | null;
+}
 
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
-  roles: AppRole[];
+  profile: ProfileRow | null;
+  permissions: PermissionKey[];
+  isAdmin: boolean;
   loading: boolean;
-  hasRole: (...r: AppRole[]) => boolean;
-  isGestao: boolean;
+  can: (...keys: PermissionKey[]) => boolean;
   signOut: () => Promise<void>;
-  refreshRoles: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -20,12 +36,32 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [roles, setRoles] = useState<AppRole[]>([]);
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [permissions, setPermissions] = useState<PermissionKey[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const loadRoles = async (uid: string) => {
-    const { data } = await supabase.from("user_roles").select("role").eq("user_id", uid);
-    setRoles((data?.map((r) => r.role as AppRole)) ?? []);
+  const loadContext = async (uid: string) => {
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("id, nome, email, numero_usuario, ativo, access_profile_id")
+      .eq("id", uid)
+      .maybeSingle();
+    setProfile(prof as ProfileRow | null);
+
+    let admin = false;
+    if (prof?.access_profile_id) {
+      const { data: ap } = await supabase
+        .from("access_profiles")
+        .select("is_admin")
+        .eq("id", prof.access_profile_id)
+        .maybeSingle();
+      admin = !!ap?.is_admin;
+    }
+    setIsAdmin(admin);
+
+    const { data: perms } = await supabase.rpc("current_user_permissions");
+    setPermissions((perms as PermissionKey[]) ?? []);
   };
 
   useEffect(() => {
@@ -33,16 +69,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        setTimeout(() => loadRoles(s.user.id), 0);
+        setTimeout(() => loadContext(s.user.id), 0);
       } else {
-        setRoles([]);
+        setProfile(null); setPermissions([]); setIsAdmin(false);
       }
     });
 
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
-      if (s?.user) loadRoles(s.user.id).finally(() => setLoading(false));
+      if (s?.user) loadContext(s.user.id).finally(() => setLoading(false));
       else setLoading(false);
     });
 
@@ -50,14 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value: AuthContextValue = {
-    user,
-    session,
-    roles,
-    loading,
-    hasRole: (...r) => r.some((x) => roles.includes(x)),
-    isGestao: roles.some((r) => ["admin", "diretor", "gestor", "rh"].includes(r)),
+    user, session, profile, permissions, isAdmin, loading,
+    can: (...keys) => isAdmin || keys.some((k) => permissions.includes(k)),
     signOut: async () => { await supabase.auth.signOut(); },
-    refreshRoles: async () => { if (user) await loadRoles(user.id); },
+    refresh: async () => { if (user) await loadContext(user.id); },
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
