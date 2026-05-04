@@ -22,17 +22,8 @@ export default function Setup() {
   const [busy, setBusy] = useState(false);
   const [needed, setNeeded] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      // Check if any admin already exists
-      const { data: ap } = await supabase
-        .from("access_profiles").select("id").eq("is_admin", true).maybeSingle();
-      if (!ap) { setNeeded(false); return; }
-      const { data: existing } = await supabase
-        .from("profiles").select("id").eq("access_profile_id", ap.id).limit(1).maybeSingle();
-      setNeeded(!existing);
-    })();
-  }, []);
+  useEffect(() => { setNeeded(true); }, []);
+
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
