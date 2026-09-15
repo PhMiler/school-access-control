@@ -58,7 +58,7 @@ export async function importarBatidas(registradoPor: string, limit = 200): Promi
     })
     .filter((v): v is { matricula: string; ts: Date; semVinculo: boolean } => !!v);
 
-  if (candidatos.length === 0) return { importadas: 0, ignoradas: logs.length, invalidas: 0 };
+  if (candidatos.length === 0) return { importadas: 0, ignoradas: logs.length, invalidas: 0, ...base };
 
   const maisAntiga = new Date(Math.min(...candidatos.map((c) => c.ts.getTime())));
 
