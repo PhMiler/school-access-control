@@ -216,6 +216,15 @@ export default function Alunos() {
                     <Badge variant={a.status === "ativo" ? "default" : "secondary"}>{a.status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Sincronizar com o relógio"
+                      disabled={syncing === a.id}
+                      onClick={() => sincronizar({ id: a.id, nome: a.nome, matricula: a.matricula })}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${syncing === a.id ? "animate-spin" : ""}`} />
+                    </Button>
                     {canUpdate && (
                       <Button variant="ghost" size="icon" onClick={() => { setEditing(a); setOpen(true); }}>
                         <Pencil className="h-4 w-4" />
