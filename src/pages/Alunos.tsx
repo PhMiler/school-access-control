@@ -359,7 +359,16 @@ export default function Alunos() {
                         </span>
                       )}
                     </span>
-                    {a.idade && <div className="text-xs text-muted-foreground">{a.idade}{a.genero ? ` · ${a.genero}` : ""}</div>}
+                    {(() => {
+                      const anos = calcularIdade(a.data_nascimento) ?? (a.idade ? Number(a.idade) : null);
+                      const texto = anos !== null && !Number.isNaN(anos) ? `${anos} anos` : a.idade ?? "";
+                      return texto || a.genero ? (
+                        <div className="text-xs text-muted-foreground">
+                          {texto}{texto && a.genero ? " · " : ""}{a.genero ?? ""}
+                        </div>
+                      ) : null;
+                    })()}
+
                   </TableCell>
                   <TableCell>
                     <code className="text-xs">{a.matricula}</code>
