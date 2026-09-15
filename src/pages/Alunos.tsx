@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -23,16 +25,24 @@ import { syncAluno, gerarPis } from "@/lib/controlid";
 import { isConfigured } from "@/lib/controlidConfig";
 
 interface Aluno {
-  id: string; nome: string; matricula: string; curso: string; turma: string;
-  status: "ativo" | "inativo"; deleted_at: string | null; pis: string | null;
+  id: string; nome: string; matricula: string; status: "ativo" | "inativo";
+  deleted_at: string | null; pis: string | null;
+  cpf: string | null; rg: string | null; genero: string | null; idade: string | null;
+  telefone: string | null; email: string | null;
 }
 
+interface Curso { id: string; nome: string }
+
 const schema = z.object({
-  nome: z.string().trim().min(2).max(120),
-  matricula: z.string().trim().min(2).max(50),
-  curso: z.string().trim().min(1).max(80),
-  turma: z.string().trim().min(1).max(40),
+  nome: z.string().trim().min(2, "Informe o nome completo").max(120),
+  matricula: z.string().trim().min(1, "Informe a matrícula").max(50),
   status: z.enum(["ativo", "inativo"]),
+  cpf: z.string().trim().max(20).optional(),
+  rg: z.string().trim().max(20).optional(),
+  genero: z.string().trim().max(30).optional(),
+  idade: z.string().trim().max(20).optional(),
+  telefone: z.string().trim().max(40).optional(),
+  email: z.string().trim().max(120).optional(),
 });
 
 export default function Alunos() {
@@ -41,11 +51,19 @@ export default function Alunos() {
   const canUpdate = can("alunos.update");
   const canDelete = can("alunos.delete");
   const [list, setList] = useState<Aluno[]>([]);
+  const [cursos, setCursos] = useState<Curso[]>([]);
+  const [vinculos, setVinculos] = useState<Record<string, string[]>>({});
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Aluno | null>(null);
+  const [selecionados, setSelecionados] = useState<string[]>([]);
   const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
+
+  const nomeCurso = useMemo(
+    () => Object.fromEntries(cursos.map((c) => [c.id, c.nome])),
+    [cursos],
+  );
 
   /** Garante que o aluno tenha um PIS gravado na ficha (exigido pelo relógio). */
   const garantirPis = async (id: string, pis?: string | null) => {
@@ -81,25 +99,54 @@ export default function Alunos() {
     }
   };
 
-
   const load = async () => {
-    const { data, error } = await supabase
-      .from("alunos").select("*").is("deleted_at", null).order("nome");
-    if (error) toast.error(error.message); else setList((data as any) ?? []);
+    const [alunosRes, cursosRes, vincRes] = await Promise.all([
+      supabase.from("alunos").select("*").is("deleted_at", null).order("nome"),
+      supabase.from("cursos").select("id,nome").order("nome"),
+      supabase.from("aluno_cursos").select("aluno_id,curso_id"),
+    ]);
+    if (alunosRes.error) toast.error(alunosRes.error.message);
+    else setList((alunosRes.data as any) ?? []);
+    if (cursosRes.data) setCursos(cursosRes.data as any);
+    if (vincRes.data) {
+      const m: Record<string, string[]> = {};
+      for (const v of vincRes.data as any[]) {
+        (m[v.aluno_id] ??= []).push(v.curso_id);
+      }
+      setVinculos(m);
+    }
   };
   useEffect(() => { load(); }, []);
+
+  const abrirNovo = () => { setEditing(null); setSelecionados([]); setOpen(true); };
+  const abrirEdicao = (a: Aluno) => { setEditing(a); setSelecionados(vinculos[a.id] ?? []); setOpen(true); };
+
+  const salvarCursos = async (alunoId: string) => {
+    await supabase.from("aluno_cursos").delete().eq("aluno_id", alunoId);
+    if (selecionados.length) {
+      const { error } = await supabase.from("aluno_cursos").insert(
+        selecionados.map((curso_id) => ({ aluno_id: alunoId, curso_id, data_inscricao: new Date().toISOString() })),
+      );
+      if (error) toast.error(`Cursos não salvos: ${error.message}`);
+    }
+  };
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const parsed = schema.safeParse(Object.fromEntries(fd));
     if (!parsed.success) { toast.error(parsed.error.errors[0].message); return; }
+    const vazio = (v?: string) => (v && v.trim() ? v.trim() : null);
     const payload = {
-      nome: parsed.data.nome!,
-      matricula: parsed.data.matricula!,
-      curso: parsed.data.curso!,
-      turma: parsed.data.turma!,
-      status: parsed.data.status!,
+      nome: parsed.data.nome,
+      matricula: parsed.data.matricula,
+      status: parsed.data.status,
+      cpf: vazio(parsed.data.cpf),
+      rg: vazio(parsed.data.rg),
+      genero: vazio(parsed.data.genero),
+      idade: vazio(parsed.data.idade),
+      telefone: vazio(parsed.data.telefone),
+      email: vazio(parsed.data.email),
     };
     // Garante um PIS por aluno (exigido pelo firmware do relógio iDClass)
     const pis = editing?.pis || gerarPis();
@@ -116,7 +163,8 @@ export default function Alunos() {
       salvoId = (data as any)?.id ?? null;
       toast.success("Aluno cadastrado");
     }
-    setOpen(false); setEditing(null); load();
+    if (salvoId) await salvarCursos(salvoId);
+    setOpen(false); setEditing(null); setSelecionados([]); load();
     if (salvoId) {
       void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula, pis }, true);
     }
@@ -130,9 +178,15 @@ export default function Alunos() {
     load();
   };
 
-  const filtered = list.filter(a =>
-    [a.nome, a.matricula, a.curso, a.turma].some(v => v.toLowerCase().includes(q.toLowerCase()))
-  );
+  const termo = q.toLowerCase();
+  const filtered = list.filter((a) => {
+    const cursosDoAluno = (vinculos[a.id] ?? []).map((id) => nomeCurso[id] ?? "");
+    return [a.nome, a.matricula, a.cpf ?? "", a.telefone ?? "", ...cursosDoAluno]
+      .some((v) => v.toLowerCase().includes(termo));
+  });
+
+  const toggleCurso = (id: string) =>
+    setSelecionados((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -142,11 +196,11 @@ export default function Alunos() {
           <p className="text-muted-foreground">Cadastro completo da instituição</p>
         </div>
         {canCreate && (
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setSelecionados([]); } }}>
             <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-2" />Novo aluno</Button>
+              <Button onClick={abrirNovo}><Plus className="h-4 w-4 mr-2" />Novo aluno</Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>{editing ? "Editar aluno" : "Cadastrar aluno"}</DialogTitle></DialogHeader>
               <form onSubmit={onSubmit} className="space-y-4">
                 <div className="grid gap-2">
@@ -171,13 +225,52 @@ export default function Alunos() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label>Curso</Label>
-                    <Input name="curso" defaultValue={editing?.curso} required />
+                    <Label>CPF</Label>
+                    <Input name="cpf" defaultValue={editing?.cpf ?? ""} />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Turma</Label>
-                    <Input name="turma" defaultValue={editing?.turma} required />
+                    <Label>RG</Label>
+                    <Input name="rg" defaultValue={editing?.rg ?? ""} />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Gênero</Label>
+                    <Input name="genero" defaultValue={editing?.genero ?? ""} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Idade</Label>
+                    <Input name="idade" defaultValue={editing?.idade ?? ""} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Telefone</Label>
+                    <Input name="telefone" defaultValue={editing?.telefone ?? ""} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Email</Label>
+                    <Input name="email" type="email" defaultValue={editing?.email ?? ""} />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Cursos / turmas</Label>
+                  <ScrollArea className="h-44 rounded-md border p-3">
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {cursos.map((c) => (
+                        <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <Checkbox
+                            checked={selecionados.includes(c.id)}
+                            onCheckedChange={() => toggleCurso(c.id)}
+                          />
+                          {c.nome}
+                        </label>
+                      ))}
+                      {cursos.length === 0 && (
+                        <p className="text-sm text-muted-foreground">Nenhum curso cadastrado</p>
+                      )}
+                    </div>
+                  </ScrollArea>
                 </div>
                 <DialogFooter><Button type="submit">Salvar</Button></DialogFooter>
               </form>
@@ -190,7 +283,7 @@ export default function Alunos() {
         <CardContent className="p-4">
           <div className="relative mb-4">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Buscar por nome, matrícula, curso ou turma…"
+            <Input placeholder="Buscar por nome, matrícula, telefone ou curso…"
               className="pl-9" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <Table>
@@ -198,8 +291,8 @@ export default function Alunos() {
               <TableRow>
                 <TableHead>Nome</TableHead>
                 <TableHead>Matrícula</TableHead>
-                <TableHead>Curso</TableHead>
-                <TableHead>Turma</TableHead>
+                <TableHead>Cursos</TableHead>
+                <TableHead>Contato</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -223,13 +316,26 @@ export default function Alunos() {
                         </span>
                       )}
                     </span>
+                    {a.idade && <div className="text-xs text-muted-foreground">{a.idade}{a.genero ? ` · ${a.genero}` : ""}</div>}
                   </TableCell>
                   <TableCell>
                     <code className="text-xs">{a.matricula}</code>
                     {a.pis && <div className="text-xs text-muted-foreground" title="PIS usado no relógio de ponto">PIS {a.pis}</div>}
                   </TableCell>
-                  <TableCell>{a.curso}</TableCell>
-                  <TableCell>{a.turma}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1 max-w-xs">
+                      {(vinculos[a.id] ?? []).map((id) => (
+                        <Badge key={id} variant="outline" className="text-xs">{nomeCurso[id]}</Badge>
+                      ))}
+                      {!(vinculos[a.id] ?? []).length && (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {a.telefone ?? "—"}
+                    {a.email && <div>{a.email}</div>}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={a.status === "ativo" ? "default" : "secondary"}>{a.status}</Badge>
                   </TableCell>
@@ -244,7 +350,7 @@ export default function Alunos() {
                       <RefreshCw className={`h-4 w-4 ${syncing === a.id ? "animate-spin" : ""}`} />
                     </Button>
                     {canUpdate && (
-                      <Button variant="ghost" size="icon" onClick={() => { setEditing(a); setOpen(true); }}>
+                      <Button variant="ghost" size="icon" onClick={() => abrirEdicao(a)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                     )}
