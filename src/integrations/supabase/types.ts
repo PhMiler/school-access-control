@@ -96,6 +96,7 @@ export type Database = {
           id: string
           matricula: string
           nome: string
+          pis: string | null
           status: Database["public"]["Enums"]["aluno_status"]
           turma: string
           updated_at: string
@@ -107,6 +108,7 @@ export type Database = {
           id?: string
           matricula: string
           nome: string
+          pis?: string | null
           status?: Database["public"]["Enums"]["aluno_status"]
           turma: string
           updated_at?: string
@@ -118,6 +120,7 @@ export type Database = {
           id?: string
           matricula?: string
           nome?: string
+          pis?: string | null
           status?: Database["public"]["Enums"]["aluno_status"]
           turma?: string
           updated_at?: string

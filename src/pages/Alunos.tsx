@@ -19,12 +19,12 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Search, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { syncAluno } from "@/lib/controlid";
+import { syncAluno, gerarPis } from "@/lib/controlid";
 import { isConfigured } from "@/lib/controlidConfig";
 
 interface Aluno {
   id: string; nome: string; matricula: string; curso: string; turma: string;
-  status: "ativo" | "inativo"; deleted_at: string | null;
+  status: "ativo" | "inativo"; deleted_at: string | null; pis: string | null;
 }
 
 const schema = z.object({
@@ -47,7 +47,7 @@ export default function Alunos() {
   const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
 
-  const sincronizar = async (aluno: { id: string; nome: string; matricula: string }, silencioso = false) => {
+  const sincronizar = async (aluno: { id: string; nome: string; matricula: string; pis?: string | null }, silencioso = false) => {
     if (!isConfigured()) {
       setNaoSincronizados((m) => ({ ...m, [aluno.id]: "Relógio não configurado" }));
       if (!silencioso) toast.warning("Relógio não configurado — configure em Relógio de Ponto");
@@ -89,21 +89,24 @@ export default function Alunos() {
       turma: parsed.data.turma!,
       status: parsed.data.status!,
     };
+    // Garante um PIS por aluno (exigido pelo firmware do relógio iDClass)
+    const pis = editing?.pis || gerarPis();
+    const payloadCompleto = editing?.pis ? payload : { ...payload, pis };
     let salvoId: string | null = null;
     if (editing) {
-      const { error } = await supabase.from("alunos").update(payload).eq("id", editing.id);
+      const { error } = await supabase.from("alunos").update(payloadCompleto).eq("id", editing.id);
       if (error) return toast.error(error.message);
       salvoId = editing.id;
       toast.success("Aluno atualizado");
     } else {
-      const { data, error } = await supabase.from("alunos").insert(payload).select("id").maybeSingle();
+      const { data, error } = await supabase.from("alunos").insert(payloadCompleto).select("id").maybeSingle();
       if (error) return toast.error(error.message);
       salvoId = (data as any)?.id ?? null;
       toast.success("Aluno cadastrado");
     }
     setOpen(false); setEditing(null); load();
     if (salvoId) {
-      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula }, true);
+      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula, pis }, true);
     }
   };
 
@@ -209,7 +212,10 @@ export default function Alunos() {
                       )}
                     </span>
                   </TableCell>
-                  <TableCell><code className="text-xs">{a.matricula}</code></TableCell>
+                  <TableCell>
+                    <code className="text-xs">{a.matricula}</code>
+                    {a.pis && <div className="text-xs text-muted-foreground" title="PIS usado no relógio de ponto">PIS {a.pis}</div>}
+                  </TableCell>
                   <TableCell>{a.curso}</TableCell>
                   <TableCell>{a.turma}</TableCell>
                   <TableCell>
@@ -221,7 +227,7 @@ export default function Alunos() {
                       size="icon"
                       title="Sincronizar com o relógio"
                       disabled={syncing === a.id}
-                      onClick={() => sincronizar({ id: a.id, nome: a.nome, matricula: a.matricula })}
+                      onClick={() => sincronizar({ id: a.id, nome: a.nome, matricula: a.matricula, pis: a.pis })}
                     >
                       <RefreshCw className={`h-4 w-4 ${syncing === a.id ? "animate-spin" : ""}`} />
                     </Button>
