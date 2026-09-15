@@ -11,7 +11,7 @@ let sessionCache: { key: string; base: string } | null = null;
 
 const TIMEOUT_MS = 8000;
 
-async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig): Promise<T> {
+async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promise<Response> {
   const url = `${baseUrl(cfg)}${path}`;
   let res: Response;
   try {
@@ -36,12 +36,23 @@ async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig):
       `O relógio respondeu com erro ${res.status} em ${path}${detalhe ? `: ${detalhe.slice(0, 200)}` : "."}`,
     );
   }
+  return res;
+}
+
+async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig): Promise<T> {
+  const res = await postRaw(path, body, cfg);
   const text = await res.text();
   try {
     return (text ? JSON.parse(text) : {}) as T;
   } catch {
     throw new Error(`Resposta inesperada do relógio em ${path}.`);
   }
+}
+
+/** Como post(), mas devolve o corpo bruto (usado pelo AFD, que vem como texto). */
+async function postText(path: string, body: unknown, cfg: ControlIdConfig): Promise<string> {
+  const res = await postRaw(path, body, cfg);
+  return res.text();
 }
 
 export async function login(cfg: ControlIdConfig = getControlIdConfig()): Promise<string> {
@@ -86,29 +97,16 @@ export interface AlunoParaSincronizar {
 }
 
 /**
- * Cria o aluno como usuário do relógio, com a matrícula como cartão.
- * Payload estrito conforme a documentação oficial da Control iD:
- * { object: "users", values: [{ name, registration }] } — sem id manual
- * (o relógio autogera) e sem campos extras, que alguns firmwares rejeitam
- * com erro 400. Se o equipamento recusar, reenvia uma única vez incluindo
- * password: "" (firmwares antigos exigem o campo presente).
+ * Cria o aluno como usuário do relógio, com a matrícula como registration.
+ * Endpoint e payload nativos do iDClass, conforme a documentação oficial:
+ * POST /add_users.fcgi?session= com { users: [{ name, registration }] } —
+ * registration sempre string, sem id manual e sem campos extras.
  */
 export async function syncAluno(aluno: AlunoParaSincronizar) {
   return withSession(async (session, cfg) => {
-    const base = {
-      name: aluno.nome,
-      registration: String(aluno.matricula),
-    };
-    try {
-      return await post(`/create_objects.fcgi?session=${session}`, { object: "users", values: [base] }, cfg);
-    } catch (e: any) {
-      if (!/\b400\b/.test(e?.message ?? "")) throw e;
-      return await post(
-        `/create_objects.fcgi?session=${session}`,
-        { object: "users", values: [{ ...base, password: "" }] },
-        cfg,
-      );
-    }
+    return post(`/add_users.fcgi?session=${session}`, {
+      users: [{ name: aluno.nome, registration: String(aluno.matricula) }],
+    }, cfg);
   });
 }
 
@@ -120,24 +118,90 @@ export interface AccessLog {
   identifier_id?: string;
   card_value?: string;
   portal_id?: number;
+  /** PIS/CPF que identifica a batida no AFD do iDClass. */
+  pis?: string;
 }
 
-/** Busca as batidas (tabela access_logs) do relógio. */
+/**
+ * Extrai o texto do AFD da resposta do relógio. Dependendo do firmware o
+ * corpo vem como texto puro ou embrulhado em JSON; pega a maior string.
+ */
+function extractAfdText(raw: string): string {
+  const t = raw.trim();
+  if (!t.startsWith("{")) return t;
+  try {
+    const obj = JSON.parse(t);
+    let melhor = "";
+    const visit = (v: any) => {
+      if (typeof v === "string") {
+        if (v.length > melhor.length) melhor = v;
+      } else if (v && typeof v === "object") {
+        Object.values(v).forEach(visit);
+      }
+    };
+    visit(obj);
+    return melhor || t;
+  } catch {
+    return t;
+  }
+}
+
+/**
+ * Interpreta as marcações do arquivo AFD (registros tipo 3, formato fixo
+ * comum ao formato legado e ao da Portaria 671):
+ * "3" + NSR(9) + data ddmmaaaa(8) + hora HHMM(4) + PIS/CPF(12).
+ * A hora do relógio é local, sem fuso — tratamos como hora local do navegador.
+ */
+function parseAfdMarcacoes(text: string): AccessLog[] {
+  const logs: AccessLog[] = [];
+  for (const linha of text.split(/\r?\n/)) {
+    const l = linha.trim();
+    if (l.length < 34 || l[0] !== "3") continue;
+    const data = l.slice(10, 18);
+    const hora = l.slice(18, 22);
+    const pis = l.slice(22, 34).trim();
+    const dia = +data.slice(0, 2);
+    const mes = +data.slice(2, 4);
+    const ano = +data.slice(4, 8);
+    const h = +hora.slice(0, 2);
+    const m = +hora.slice(2, 4);
+    if (!dia || !mes || !ano || !hora || Number.isNaN(h) || Number.isNaN(m)) continue;
+    const ts = new Date(ano, mes - 1, dia, h, m);
+    if (Number.isNaN(ts.getTime())) continue;
+    logs.push({ time: Math.floor(ts.getTime() / 1000), pis });
+  }
+  logs.sort((a, b) => (b.time ?? 0) - (a.time ?? 0));
+  return logs;
+}
+
+/**
+ * Busca as batidas do relógio via arquivo AFD (Portaria 671). A linha iDClass
+ * não expõe a tabela access_logs — o AFD é o canal oficial de marcações.
+ * Filtra os últimos 90 dias para limitar o tamanho da resposta.
+ */
 export async function loadAccessLogs(limit = 200): Promise<AccessLog[]> {
-  const data = await withSession((session, cfg) =>
-    post<{ access_logs?: AccessLog[] }>(
-      `/load_objects.fcgi?session=${session}`,
-      { object: "access_logs", order: ["-time"], limit },
-      cfg,
-    ),
+  const inicial = new Date();
+  inicial.setDate(inicial.getDate() - 90);
+  const initial_date = {
+    day: inicial.getDate(),
+    month: inicial.getMonth() + 1,
+    year: inicial.getFullYear(),
+  };
+  const raw = await withSession((session, cfg) =>
+    postText(`/get_afd.fcgi?session=${session}&mode=671`, { headerTop: true, initial_date }, cfg),
   );
-  return data?.access_logs ?? [];
+  return parseAfdMarcacoes(extractAfdText(raw)).slice(0, limit);
 }
 
-/** Busca os usuários do relógio, para casar as batidas com a matrícula. */
-export async function loadUsers(): Promise<{ id?: number; name?: string; registration?: string }[]> {
+/**
+ * Busca os usuários do relógio (endpoint nativo do iDClass), para casar as
+ * batidas do AFD — que identificam a pessoa pelo PIS/CPF — com a matrícula.
+ */
+export async function loadUsers(): Promise<
+  { id?: number; name?: string; registration?: string; pis?: string | number; cpf?: string | number }[]
+> {
   const data = await withSession((session, cfg) =>
-    post<{ users?: any[] }>(`/load_objects.fcgi?session=${session}`, { object: "users" }, cfg),
+    post<{ users?: any[] }>(`/load_users.fcgi?session=${session}`, { limit: 1000, offset: 0 }, cfg),
   );
   return data?.users ?? [];
 }
