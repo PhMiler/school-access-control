@@ -108,7 +108,7 @@ export default function ControleAcesso() {
           <h1 className="text-2xl font-bold">Controle de Acesso</h1>
           <p className="text-muted-foreground">Registre entradas e saídas em tempo real</p>
         </div>
-        <Button variant="outline" disabled={importando} onClick={importar}>
+        <Button variant="outline" disabled={importando} onClick={() => importar()}>
           <Download className={`h-4 w-4 mr-2 ${importando ? "animate-pulse" : ""}`} />
           Importar batidas do relógio
         </Button>
