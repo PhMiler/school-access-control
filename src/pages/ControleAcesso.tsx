@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Fingerprint, KeyRound, LogIn, LogOut, CheckCircle2, XCircle } from "lucide-react";
+import { Fingerprint, KeyRound, LogIn, LogOut, CheckCircle2, XCircle, Download } from "lucide-react";
+import { importarBatidas } from "@/lib/controlidImport";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -19,6 +20,20 @@ export default function ControleAcesso() {
   const [busy, setBusy] = useState(false);
   const [recentes, setRecentes] = useState<any[]>([]);
   const [feedback, setFeedback] = useState<{ ok: boolean; nome?: string; matricula?: string } | null>(null);
+  const [importando, setImportando] = useState(false);
+
+  const importar = async () => {
+    setImportando(true);
+    try {
+      const r = await importarBatidas(user!.id);
+      toast.success(`${r.importadas} batida(s) importada(s) · ${r.ignoradas} já existia(m)`);
+      load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao importar batidas do relógio");
+    } finally {
+      setImportando(false);
+    }
+  };
 
   const load = async () => {
     const { data } = await supabase.from("acessos")
@@ -62,9 +77,15 @@ export default function ControleAcesso() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold">Controle de Acesso</h1>
-        <p className="text-muted-foreground">Registre entradas e saídas em tempo real</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Controle de Acesso</h1>
+          <p className="text-muted-foreground">Registre entradas e saídas em tempo real</p>
+        </div>
+        <Button variant="outline" disabled={importando} onClick={importar}>
+          <Download className={`h-4 w-4 mr-2 ${importando ? "animate-pulse" : ""}`} />
+          Importar batidas do relógio
+        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">

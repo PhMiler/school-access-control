@@ -17,8 +17,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { syncAluno } from "@/lib/controlid";
+import { isConfigured } from "@/lib/controlidConfig";
 
 interface Aluno {
   id: string; nome: string; matricula: string; curso: string; turma: string;
@@ -42,6 +44,31 @@ export default function Alunos() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Aluno | null>(null);
+  const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
+  const [syncing, setSyncing] = useState<string | null>(null);
+
+  const sincronizar = async (aluno: { id: string; nome: string; matricula: string }, silencioso = false) => {
+    if (!isConfigured()) {
+      setNaoSincronizados((m) => ({ ...m, [aluno.id]: "Relógio não configurado" }));
+      if (!silencioso) toast.warning("Relógio não configurado — configure em Relógio de Ponto");
+      return false;
+    }
+    setSyncing(aluno.id);
+    try {
+      await syncAluno(aluno);
+      setNaoSincronizados((m) => { const n = { ...m }; delete n[aluno.id]; return n; });
+      toast.success(`${aluno.nome} sincronizado no relógio`);
+      return true;
+    } catch (e: any) {
+      const msg = e?.message ?? "Falha ao sincronizar com o relógio";
+      setNaoSincronizados((m) => ({ ...m, [aluno.id]: msg }));
+      toast.error(`Aluno salvo, mas não sincronizado: ${msg}`);
+      return false;
+    } finally {
+      setSyncing(null);
+    }
+  };
+
 
   const load = async () => {
     const { data, error } = await supabase
@@ -62,16 +89,22 @@ export default function Alunos() {
       turma: parsed.data.turma!,
       status: parsed.data.status!,
     };
+    let salvoId: string | null = null;
     if (editing) {
       const { error } = await supabase.from("alunos").update(payload).eq("id", editing.id);
       if (error) return toast.error(error.message);
+      salvoId = editing.id;
       toast.success("Aluno atualizado");
     } else {
-      const { error } = await supabase.from("alunos").insert(payload);
+      const { data, error } = await supabase.from("alunos").insert(payload).select("id").maybeSingle();
       if (error) return toast.error(error.message);
+      salvoId = (data as any)?.id ?? null;
       toast.success("Aluno cadastrado");
     }
     setOpen(false); setEditing(null); load();
+    if (salvoId) {
+      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula }, true);
+    }
   };
 
   const remove = async (id: string) => {
@@ -162,7 +195,20 @@ export default function Alunos() {
               )}
               {filtered.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-medium">{a.nome}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      {a.nome}
+                      {naoSincronizados[a.id] && (
+                        <span
+                          title={`Não sincronizado no relógio: ${naoSincronizados[a.id]}`}
+                          className="inline-flex items-center gap-1 text-xs text-destructive"
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          não sincronizado
+                        </span>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell><code className="text-xs">{a.matricula}</code></TableCell>
                   <TableCell>{a.curso}</TableCell>
                   <TableCell>{a.turma}</TableCell>
@@ -170,6 +216,15 @@ export default function Alunos() {
                     <Badge variant={a.status === "ativo" ? "default" : "secondary"}>{a.status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Sincronizar com o relógio"
+                      disabled={syncing === a.id}
+                      onClick={() => sincronizar({ id: a.id, nome: a.nome, matricula: a.matricula })}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${syncing === a.id ? "animate-spin" : ""}`} />
+                    </Button>
                     {canUpdate && (
                       <Button variant="ghost" size="icon" onClick={() => { setEditing(a); setOpen(true); }}>
                         <Pencil className="h-4 w-4" />

@@ -15,6 +15,7 @@ import ControleAcesso from "./pages/ControleAcesso";
 import Relatorios from "./pages/Relatorios";
 import Usuarios from "./pages/Usuarios";
 import Perfis from "./pages/Perfis";
+import Relogio from "./pages/Relogio";
 import Ajuda from "./pages/Ajuda";
 import NotFound from "./pages/NotFound";
 
@@ -39,6 +40,7 @@ const App = () => (
               <Route path="/ajuda" element={<Ajuda />} />
               <Route path="/usuarios" element={<ProtectedRoute permissions={["usuarios.view"]}><Usuarios /></ProtectedRoute>} />
               <Route path="/perfis" element={<ProtectedRoute permissions={["perfis.manage"]}><Perfis /></ProtectedRoute>} />
+              <Route path="/relogio" element={<ProtectedRoute adminOnly><Relogio /></ProtectedRoute>} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
