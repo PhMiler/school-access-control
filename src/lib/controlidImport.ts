@@ -13,6 +13,7 @@ export interface ImportResult {
  */
 export async function importarBatidas(registradoPor: string, limit = 200): Promise<ImportResult> {
   const [logs, users] = await Promise.all([loadAccessLogs(limit), loadUsers().catch(() => [])]);
+  console.log("Resposta do relógio na importação:", { batidas: logs, usuarios: users });
   if (logs.length === 0) return { importadas: 0, ignoradas: 0, invalidas: 0 };
 
   const matriculaPorUserId = new Map<number, string>();
