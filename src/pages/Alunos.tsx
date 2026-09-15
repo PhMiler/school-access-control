@@ -229,8 +229,20 @@ export default function Alunos() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label>Matrícula</Label>
-                    <Input name="matricula" defaultValue={editing?.matricula} required />
+                    <Label>Data de nascimento</Label>
+                    <Input
+                      name="data_nascimento"
+                      type="date"
+                      max={new Date().toISOString().slice(0, 10)}
+                      value={nascimento}
+                      onChange={(e) => setNascimento(e.target.value)}
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {calcularIdade(nascimento) !== null
+                        ? `${calcularIdade(nascimento)} anos`
+                        : "A idade é calculada automaticamente"}
+                    </p>
                   </div>
                   <div className="grid gap-2">
                     <Label>Status</Label>
@@ -245,24 +257,32 @@ export default function Alunos() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label>CPF</Label>
-                    <Input name="cpf" defaultValue={editing?.cpf ?? ""} />
+                    <Label>Gênero</Label>
+                    <Select name="genero" defaultValue={editing?.genero ?? ""}>
+                      <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Feminino">Feminino</SelectItem>
+                        <SelectItem value="Masculino">Masculino</SelectItem>
+                        <SelectItem value="Outro">Outro</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label>RG</Label>
-                    <Input name="rg" defaultValue={editing?.rg ?? ""} />
+                    <Label>Telefone</Label>
+                    <Input name="telefone" defaultValue={editing?.telefone ?? ""} required />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label>Gênero</Label>
-                    <Input name="genero" defaultValue={editing?.genero ?? ""} />
+                    <Label>CPF <span className="text-muted-foreground text-xs">(opcional)</span></Label>
+                    <Input name="cpf" defaultValue={editing?.cpf ?? ""} />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Idade</Label>
-                    <Input name="idade" defaultValue={editing?.idade ?? ""} />
+                    <Label>RG <span className="text-muted-foreground text-xs">(opcional)</span></Label>
+                    <Input name="rg" defaultValue={editing?.rg ?? ""} />
                   </div>
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
                     <Label>Telefone</Label>
