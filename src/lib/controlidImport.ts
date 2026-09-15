@@ -86,7 +86,7 @@ export async function importarBatidas(registradoPor: string, limit = 200): Promi
     }
     chaveExistente.add(chave);
     const aluno = alunoPorMatricula.get(c.matricula);
-    const valido = !!aluno && aluno.status === "ativo";
+    const valido = !!aluno && aluno.status === "ativo" && !c.semVinculo;
     if (!valido) invalidas++;
     novos.push({
       aluno_id: aluno?.id ?? null,
@@ -96,7 +96,9 @@ export async function importarBatidas(registradoPor: string, limit = 200): Promi
       status: valido ? "valido" : "invalido",
       registrado_por: registradoPor,
       created_at: c.ts.toISOString(),
-      observacao: "Importado do relógio Control iD",
+      observacao: c.semVinculo
+        ? "PIS não vinculado a matrícula no relógio"
+        : "Importado do relógio Control iD",
     });
   }
 
