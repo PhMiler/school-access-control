@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,29 +21,7 @@ export default function ControleAcesso() {
   const [recentes, setRecentes] = useState<any[]>([]);
   const [feedback, setFeedback] = useState<{ ok: boolean; nome?: string; matricula?: string } | null>(null);
   const [importando, setImportando] = useState(false);
-
-  const importar = async () => {
-    setImportando(true);
-    try {
-      const r = await importarBatidas(user!.id);
-      if (r.lidas === 0) {
-        if (r.linhasRecebidas > 0) {
-          toast.warning(
-            `O relógio devolveu ${r.linhasRecebidas} linha(s), mas nenhuma batida foi reconhecida. Veja os detalhes no console (F12).`,
-          );
-        } else {
-          toast.info("O relógio respondeu sem nenhuma marcação registrada.");
-        }
-      } else {
-        toast.success(`${r.importadas} batida(s) importada(s) · ${r.ignoradas} já existia(m)`);
-      }
-      load();
-    } catch (e: any) {
-      toast.error(e?.message ?? "Falha ao importar batidas do relógio");
-    } finally {
-      setImportando(false);
-    }
-  };
+  const rodando = useRef(false);
 
   const load = async () => {
     const { data } = await supabase.from("acessos")
@@ -51,7 +29,45 @@ export default function ControleAcesso() {
       .order("created_at", { ascending: false }).limit(8);
     setRecentes(data ?? []);
   };
+
+  const importar = async (silencioso = false) => {
+    if (rodando.current) return;
+    rodando.current = true;
+    if (!silencioso) setImportando(true);
+    try {
+      const r = await importarBatidas(user!.id);
+      if (silencioso) {
+        if (r.importadas > 0) load();
+      } else if (r.lidas === 0) {
+        if (r.linhasRecebidas > 0) {
+          toast.warning(
+            `O relógio devolveu ${r.linhasRecebidas} linha(s), mas nenhuma batida foi reconhecida. Veja os detalhes no console (F12).`,
+          );
+        } else {
+          toast.info("O relógio respondeu sem nenhuma marcação registrada.");
+        }
+        load();
+      } else {
+        toast.success(`${r.importadas} batida(s) importada(s) · ${r.ignoradas} já existia(m)`);
+        load();
+      }
+    } catch (e: any) {
+      if (silencioso) console.warn("Importação automática de batidas falhou:", e);
+      else toast.error(e?.message ?? "Falha ao importar batidas do relógio");
+    } finally {
+      rodando.current = false;
+      if (!silencioso) setImportando(false);
+    }
+  };
+
   useEffect(() => { load(); }, []);
+
+  // importação automática silenciosa a cada 2 minutos
+  useEffect(() => {
+    if (!user?.id) return;
+    const id = setInterval(() => { importar(true); }, 120_000);
+    return () => clearInterval(id);
+  }, [user?.id]);
 
   const registrar = async (metodo: "biometria" | "manual", matriculaInput: string) => {
     if (!matriculaInput.trim()) { toast.error("Informe a matrícula"); return; }
@@ -92,7 +108,7 @@ export default function ControleAcesso() {
           <h1 className="text-2xl font-bold">Controle de Acesso</h1>
           <p className="text-muted-foreground">Registre entradas e saídas em tempo real</p>
         </div>
-        <Button variant="outline" disabled={importando} onClick={importar}>
+        <Button variant="outline" disabled={importando} onClick={() => importar()}>
           <Download className={`h-4 w-4 mr-2 ${importando ? "animate-pulse" : ""}`} />
           Importar batidas do relógio
         </Button>
