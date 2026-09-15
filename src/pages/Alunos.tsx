@@ -149,39 +149,46 @@ export default function Alunos() {
     const fd = new FormData(e.currentTarget);
     const parsed = schema.safeParse(Object.fromEntries(fd));
     if (!parsed.success) { toast.error(parsed.error.errors[0].message); return; }
+    if (!selecionados.length) { toast.error("Selecione pelo menos um curso"); return; }
+    const idade = calcularIdade(parsed.data.data_nascimento);
+    if (idade === null) { toast.error("Data de nascimento inválida"); return; }
     const vazio = (v?: string) => (v && v.trim() ? v.trim() : null);
     const payload = {
       nome: parsed.data.nome,
-      matricula: parsed.data.matricula,
       status: parsed.data.status,
+      data_nascimento: parsed.data.data_nascimento,
+      genero: parsed.data.genero,
+      idade: String(idade),
+      telefone: parsed.data.telefone,
       cpf: vazio(parsed.data.cpf),
       rg: vazio(parsed.data.rg),
-      genero: vazio(parsed.data.genero),
-      idade: vazio(parsed.data.idade),
-      telefone: vazio(parsed.data.telefone),
       email: vazio(parsed.data.email),
     };
     // Garante um PIS por aluno (exigido pelo firmware do relógio iDClass)
     const pis = editing?.pis || gerarPis();
     const payloadCompleto = editing?.pis ? payload : { ...payload, pis };
     let salvoId: string | null = null;
+    let matriculaSalva = editing?.matricula ?? "";
     if (editing) {
       const { error } = await supabase.from("alunos").update(payloadCompleto).eq("id", editing.id);
       if (error) return toast.error(error.message);
       salvoId = editing.id;
       toast.success("Aluno atualizado");
     } else {
-      const { data, error } = await supabase.from("alunos").insert(payloadCompleto).select("id").maybeSingle();
+      const { data, error } = await supabase
+        .from("alunos").insert(payloadCompleto as any).select("id,matricula").maybeSingle();
       if (error) return toast.error(error.message);
       salvoId = (data as any)?.id ?? null;
-      toast.success("Aluno cadastrado");
+      matriculaSalva = (data as any)?.matricula ?? "";
+      toast.success(`Aluno cadastrado — matrícula ${matriculaSalva}`);
     }
     if (salvoId) await salvarCursos(salvoId);
     setOpen(false); setEditing(null); setSelecionados([]); load();
     if (salvoId) {
-      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula, pis }, true);
+      void sincronizar({ id: salvoId, nome: payload.nome, matricula: matriculaSalva, pis }, true);
     }
   };
+
 
   const remove = async (id: string) => {
     const { error } = await supabase.from("alunos")
