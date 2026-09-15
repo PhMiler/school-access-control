@@ -44,6 +44,31 @@ export default function Alunos() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Aluno | null>(null);
+  const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
+  const [syncing, setSyncing] = useState<string | null>(null);
+
+  const sincronizar = async (aluno: { id: string; nome: string; matricula: string }, silencioso = false) => {
+    if (!isConfigured()) {
+      setNaoSincronizados((m) => ({ ...m, [aluno.id]: "Relógio não configurado" }));
+      if (!silencioso) toast.warning("Relógio não configurado — configure em Relógio de Ponto");
+      return false;
+    }
+    setSyncing(aluno.id);
+    try {
+      await syncAluno(aluno);
+      setNaoSincronizados((m) => { const n = { ...m }; delete n[aluno.id]; return n; });
+      toast.success(`${aluno.nome} sincronizado no relógio`);
+      return true;
+    } catch (e: any) {
+      const msg = e?.message ?? "Falha ao sincronizar com o relógio";
+      setNaoSincronizados((m) => ({ ...m, [aluno.id]: msg }));
+      toast.error(`Aluno salvo, mas não sincronizado: ${msg}`);
+      return false;
+    } finally {
+      setSyncing(null);
+    }
+  };
+
 
   const load = async () => {
     const { data, error } = await supabase
