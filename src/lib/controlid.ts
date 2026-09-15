@@ -94,18 +94,34 @@ export interface AlunoParaSincronizar {
   id: string;
   nome: string;
   matricula: string;
+  pis?: string | null;
+}
+
+/**
+ * Gera um PIS válido de 11 dígitos (10 aleatórios + dígito verificador
+ * calculado com os pesos oficiais 3-2-9-8-7-6-5-4-3-2).
+ */
+export function gerarPis(): string {
+  const base = Array.from({ length: 10 }, () => Math.floor(Math.random() * 10));
+  const pesos = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const soma = base.reduce((acc, d, i) => acc + d * pesos[i], 0);
+  let dv = 11 - (soma % 11);
+  if (dv >= 10) dv = 0;
+  return [...base, dv].join("");
 }
 
 /**
  * Cria o aluno como usuário do relógio, com a matrícula como registration.
  * Endpoint e payload nativos do iDClass, conforme a documentação oficial:
- * POST /add_users.fcgi?session= com { users: [{ name, registration }] } —
- * registration sempre string, sem id manual e sem campos extras.
+ * POST /add_users.fcgi?session= com { users: [{ name, registration, pis }] }.
+ * O firmware exige um PIS válido (11 dígitos com dígito verificador) — usa o
+ * PIS gravado no cadastro do aluno ou gera um na hora.
  */
 export async function syncAluno(aluno: AlunoParaSincronizar) {
+  const pis = (aluno.pis && aluno.pis.trim()) || gerarPis();
   return withSession(async (session, cfg) => {
     return post(`/add_users.fcgi?session=${session}`, {
-      users: [{ name: aluno.nome, registration: String(aluno.matricula) }],
+      users: [{ name: aluno.nome, registration: String(aluno.matricula), pis }],
     }, cfg);
   });
 }
