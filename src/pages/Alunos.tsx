@@ -70,6 +70,8 @@ export default function Alunos() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Aluno | null>(null);
   const [selecionados, setSelecionados] = useState<string[]>([]);
+  const [nascimento, setNascimento] = useState("");
+
   const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
 
