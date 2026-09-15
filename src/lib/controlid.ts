@@ -134,10 +134,9 @@ function normalizarPis(valor?: string | null): string {
   return pisValido(d) ? d : gerarPis();
 }
 
-/** Matrícula somente com números (mantém o original se não houver dígitos). */
+/** Matrícula limpa: só dígitos e sem zeros à esquerda ("005" -> "5"). */
 function normalizarMatricula(matricula: string): string {
-  const d = String(matricula).replace(/\D/g, "");
-  return d || String(matricula).trim();
+  return String(matricula).replace(/^0+/, "").replace(/\D/g, "") || "1";
 }
 
 /** Nome sem caracteres de controle, espaços duplicados nem excesso de tamanho. */
@@ -161,18 +160,24 @@ export async function syncAluno(aluno: AlunoParaSincronizar) {
   const pis = normalizarPis(aluno.pis);
   const name = normalizarNome(aluno.nome);
   const registration = normalizarMatricula(aluno.matricula);
-  const enviar = (pisValor: string | number) =>
+  const enviar = (comoNumero: boolean) =>
     withSession(async (session, cfg) =>
       post(`/add_users.fcgi?session=${session}`, {
-        users: [{ name, registration, pis: pisValor }],
+        users: [
+          {
+            name,
+            registration: comoNumero ? Number(registration) : registration,
+            pis: comoNumero ? Number(pis) : pis,
+          },
+        ],
       }, cfg),
     );
   try {
-    return await enviar(pis);
+    return await enviar(false);
   } catch (e: any) {
     if (!/\b400\b/.test(String(e?.message ?? ""))) throw e;
     try {
-      return await enviar(Number(pis));
+      return await enviar(true);
     } catch (e2: any) {
       throw new Error(e2?.message || e?.message || "Falha ao cadastrar o aluno no relógio");
     }
