@@ -17,8 +17,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { syncAluno } from "@/lib/controlid";
+import { isConfigured } from "@/lib/controlidConfig";
 
 interface Aluno {
   id: string; nome: string; matricula: string; curso: string; turma: string;
