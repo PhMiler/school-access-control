@@ -63,34 +63,54 @@ export async function importarBatidas(registradoPor: string, limit = 500): Promi
   });
 
   const maisAntiga = new Date(Math.min(...candidatos.map((c) => c.ts.getTime())));
+  // início do dia local da batida mais antiga, para contar corretamente a alternância
+  const inicioDia = new Date(maisAntiga.getFullYear(), maisAntiga.getMonth(), maisAntiga.getDate(), 0, 0, 0, 0);
 
   const { data: existentes } = await supabase
     .from("acessos")
     .select("matricula_tentada, created_at")
     .eq("metodo", "biometria")
-    .gte("created_at", maisAntiga.toISOString());
+    .gte("created_at", inicioDia.toISOString());
 
   const chaveExistente = new Set(
     (existentes ?? []).map((e: any) => `${e.matricula_tentada}|${new Date(e.created_at).toISOString()}`),
   );
 
+  const diaLocal = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  // quantidade de batidas já gravadas por aluno/dia (offset da paridade entrada/saída)
+  const contagemDia = new Map<string, number>();
+  for (const e of existentes ?? []) {
+    const k = `${(e as any).matricula_tentada}|${diaLocal(new Date((e as any).created_at))}`;
+    contagemDia.set(k, (contagemDia.get(k) ?? 0) + 1);
+  }
+
+  // ordem crescente por horário para a alternância ficar correta
+  const ordenados = [...candidatos].sort((a, b) => a.ts.getTime() - b.ts.getTime());
+
   const novos: any[] = [];
   let ignoradas = 0;
   let invalidas = 0;
 
-  for (const c of candidatos) {
+  for (const c of ordenados) {
     const chave = `${c.matricula}|${c.ts.toISOString()}`;
     if (chaveExistente.has(chave)) {
       ignoradas++;
       continue;
     }
     chaveExistente.add(chave);
+
+    const chaveDia = `${c.matricula}|${diaLocal(c.ts)}`;
+    const indice = contagemDia.get(chaveDia) ?? 0;
+    contagemDia.set(chaveDia, indice + 1);
+
     const valido = !!c.aluno && c.aluno.status === "ativo";
     if (!valido) invalidas++;
     novos.push({
       aluno_id: c.aluno?.id ?? null,
       matricula_tentada: c.matricula,
-      tipo: "entrada",
+      tipo: indice % 2 === 0 ? "entrada" : "saida",
       metodo: "biometria",
       status: valido ? "valido" : "invalido",
       registrado_por: registradoPor,
