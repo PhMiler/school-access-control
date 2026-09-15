@@ -88,41 +88,116 @@ export type Database = {
           },
         ]
       }
+      aluno_cursos: {
+        Row: {
+          aluno_id: string
+          created_at: string
+          curso_id: string
+          data_inscricao: string | null
+        }
+        Insert: {
+          aluno_id: string
+          created_at?: string
+          curso_id: string
+          data_inscricao?: string | null
+        }
+        Update: {
+          aluno_id?: string
+          created_at?: string
+          curso_id?: string
+          data_inscricao?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "aluno_cursos_aluno_id_fkey"
+            columns: ["aluno_id"]
+            isOneToOne: false
+            referencedRelation: "alunos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "aluno_cursos_curso_id_fkey"
+            columns: ["curso_id"]
+            isOneToOne: false
+            referencedRelation: "cursos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alunos: {
         Row: {
+          cpf: string | null
           created_at: string
-          curso: string
+          curso: string | null
           deleted_at: string | null
+          email: string | null
+          genero: string | null
           id: string
+          idade: string | null
           matricula: string
           nome: string
           pis: string | null
+          rg: string | null
           status: Database["public"]["Enums"]["aluno_status"]
-          turma: string
+          telefone: string | null
+          turma: string | null
+          updated_at: string
+        }
+        Insert: {
+          cpf?: string | null
+          created_at?: string
+          curso?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          genero?: string | null
+          id?: string
+          idade?: string | null
+          matricula: string
+          nome: string
+          pis?: string | null
+          rg?: string | null
+          status?: Database["public"]["Enums"]["aluno_status"]
+          telefone?: string | null
+          turma?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cpf?: string | null
+          created_at?: string
+          curso?: string | null
+          deleted_at?: string | null
+          email?: string | null
+          genero?: string | null
+          id?: string
+          idade?: string | null
+          matricula?: string
+          nome?: string
+          pis?: string | null
+          rg?: string | null
+          status?: Database["public"]["Enums"]["aluno_status"]
+          telefone?: string | null
+          turma?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cursos: {
+        Row: {
+          created_at: string
+          id: string
+          nome: string
           updated_at: string
         }
         Insert: {
           created_at?: string
-          curso: string
-          deleted_at?: string | null
           id?: string
-          matricula: string
           nome: string
-          pis?: string | null
-          status?: Database["public"]["Enums"]["aluno_status"]
-          turma: string
           updated_at?: string
         }
         Update: {
           created_at?: string
-          curso?: string
-          deleted_at?: string | null
           id?: string
-          matricula?: string
           nome?: string
-          pis?: string | null
-          status?: Database["public"]["Enums"]["aluno_status"]
-          turma?: string
           updated_at?: string
         }
         Relationships: []
