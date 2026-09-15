@@ -28,22 +28,35 @@ interface Aluno {
   id: string; nome: string; matricula: string; status: "ativo" | "inativo";
   deleted_at: string | null; pis: string | null;
   cpf: string | null; rg: string | null; genero: string | null; idade: string | null;
-  telefone: string | null; email: string | null;
+  telefone: string | null; email: string | null; data_nascimento: string | null;
 }
 
 interface Curso { id: string; nome: string }
 
+/** Idade em anos completos a partir de uma data (YYYY-MM-DD). */
+export function calcularIdade(dataNascimento?: string | null): number | null {
+  if (!dataNascimento) return null;
+  const [ano, mes, dia] = dataNascimento.slice(0, 10).split("-").map(Number);
+  if (!ano || !mes || !dia) return null;
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - ano;
+  const aniversarioPassou =
+    hoje.getMonth() + 1 > mes || (hoje.getMonth() + 1 === mes && hoje.getDate() >= dia);
+  if (!aniversarioPassou) idade -= 1;
+  return idade >= 0 && idade < 130 ? idade : null;
+}
+
 const schema = z.object({
   nome: z.string().trim().min(2, "Informe o nome completo").max(120),
-  matricula: z.string().trim().min(1, "Informe a matrícula").max(50),
   status: z.enum(["ativo", "inativo"]),
+  data_nascimento: z.string().trim().min(10, "Informe a data de nascimento"),
+  genero: z.string().trim().min(1, "Informe o gênero").max(30),
+  telefone: z.string().trim().min(8, "Informe o telefone").max(40),
   cpf: z.string().trim().max(20).optional(),
   rg: z.string().trim().max(20).optional(),
-  genero: z.string().trim().max(30).optional(),
-  idade: z.string().trim().max(20).optional(),
-  telefone: z.string().trim().max(40).optional(),
   email: z.string().trim().max(120).optional(),
 });
+
 
 export default function Alunos() {
   const { can } = useAuth();
