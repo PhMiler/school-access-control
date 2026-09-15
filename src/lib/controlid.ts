@@ -193,10 +193,15 @@ export async function loadAccessLogs(limit = 200): Promise<AccessLog[]> {
   return parseAfdMarcacoes(extractAfdText(raw)).slice(0, limit);
 }
 
-/** Busca os usuários do relógio, para casar as batidas com a matrícula. */
-export async function loadUsers(): Promise<{ id?: number; name?: string; registration?: string }[]> {
+/**
+ * Busca os usuários do relógio (endpoint nativo do iDClass), para casar as
+ * batidas do AFD — que identificam a pessoa pelo PIS/CPF — com a matrícula.
+ */
+export async function loadUsers(): Promise<
+  { id?: number; name?: string; registration?: string; pis?: string | number; cpf?: string | number }[]
+> {
   const data = await withSession((session, cfg) =>
-    post<{ users?: any[] }>(`/load_objects.fcgi?session=${session}`, { object: "users" }, cfg),
+    post<{ users?: any[] }>(`/load_users.fcgi?session=${session}`, { limit: 1000, offset: 0 }, cfg),
   );
   return data?.users ?? [];
 }
