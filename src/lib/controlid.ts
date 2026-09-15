@@ -314,7 +314,7 @@ export function getUltimoDiagnosticoAfd(): AfdDiagnostico {
  * parâmetro e por fim 1510, sem filtro de data nem NSR inicial, para o
  * equipamento devolver tudo o que está gravado na memória.
  */
-export async function loadAccessLogs(limit = 200): Promise<AccessLog[]> {
+export async function loadAccessLogs(limit = 500): Promise<AccessLog[]> {
   const tentativas: AfdDiagnostico["tentativas"] = [];
   let logs: AccessLog[] = [];
   let linhasRecebidas = 0;
