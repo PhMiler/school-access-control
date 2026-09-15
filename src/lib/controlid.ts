@@ -247,31 +247,47 @@ function extractAfdText(raw: string): string {
 function parseAfdMarcacoes(text: string): AccessLog[] {
   const logs: AccessLog[] = [];
   for (const linha of text.split(/\r?\n/)) {
-    const l = linha.trim();
+    const l = linha.replace(/\s+$/, "");
     if (l.length < 20) continue;
 
-    // Layout 671: data/hora em ISO em qualquer posição da linha.
+    // Layout AFD com posições fixas: tipo "3" no 10º caractere.
+    if (l.length >= 34 && l.charAt(9) === "3") {
+      const dia = +l.substring(10, 12);
+      const mes = +l.substring(12, 14);
+      const ano = +l.substring(14, 18);
+      const h = +l.substring(18, 20);
+      const m = +l.substring(20, 22);
+      const pis = l.substring(22, 34).replace(/\D/g, "").slice(-11);
+      if (!dia || !mes || !ano || Number.isNaN(h) || Number.isNaN(m)) continue;
+      const ts = new Date(ano, mes - 1, dia, h, m);
+      if (Number.isNaN(ts.getTime())) continue;
+      logs.push({ time: Math.floor(ts.getTime() / 1000), pis });
+      continue;
+    }
+
+    // Fallback: data/hora em ISO em qualquer posição da linha (layout 671).
     const iso = l.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
     if (iso && (l[9] === "3" || l[0] === "3")) {
       const ts = new Date(+iso[1], +iso[2] - 1, +iso[3], +iso[4], +iso[5], +(iso[6] ?? 0));
       if (Number.isNaN(ts.getTime())) continue;
       const resto = l.slice((iso.index ?? 0) + iso[0].length);
       const ident = resto.match(/\d{11,12}/);
-      logs.push({ time: Math.floor(ts.getTime() / 1000), pis: ident ? ident[0].trim() : undefined });
+      logs.push({
+        time: Math.floor(ts.getTime() / 1000),
+        pis: ident ? ident[0].replace(/\D/g, "").slice(-11) : undefined,
+      });
       continue;
     }
 
-    // Layout legado (posições fixas).
+    // Layout legado: tipo "3" no primeiro caractere.
     if (l.length < 34 || l[0] !== "3") continue;
-    const data = l.slice(10, 18);
-    const hora = l.slice(18, 22);
-    const pis = l.slice(22, 34).trim();
-    const dia = +data.slice(0, 2);
-    const mes = +data.slice(2, 4);
-    const ano = +data.slice(4, 8);
-    const h = +hora.slice(0, 2);
-    const m = +hora.slice(2, 4);
-    if (!dia || !mes || !ano || !hora || Number.isNaN(h) || Number.isNaN(m)) continue;
+    const dia = +l.slice(10, 12);
+    const mes = +l.slice(12, 14);
+    const ano = +l.slice(14, 18);
+    const h = +l.slice(18, 20);
+    const m = +l.slice(20, 22);
+    const pis = l.slice(22, 34).replace(/\D/g, "").slice(-11);
+    if (!dia || !mes || !ano || Number.isNaN(h) || Number.isNaN(m)) continue;
     const ts = new Date(ano, mes - 1, dia, h, m);
     if (Number.isNaN(ts.getTime())) continue;
     logs.push({ time: Math.floor(ts.getTime() / 1000), pis });
@@ -279,6 +295,7 @@ function parseAfdMarcacoes(text: string): AccessLog[] {
   logs.sort((a, b) => (b.time ?? 0) - (a.time ?? 0));
   return logs;
 }
+
 
 /** Última leitura do AFD, para diagnóstico na tela e no console. */
 export interface AfdDiagnostico {
