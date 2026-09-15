@@ -89,16 +89,22 @@ export default function Alunos() {
       turma: parsed.data.turma!,
       status: parsed.data.status!,
     };
+    let salvoId: string | null = null;
     if (editing) {
       const { error } = await supabase.from("alunos").update(payload).eq("id", editing.id);
       if (error) return toast.error(error.message);
+      salvoId = editing.id;
       toast.success("Aluno atualizado");
     } else {
-      const { error } = await supabase.from("alunos").insert(payload);
+      const { data, error } = await supabase.from("alunos").insert(payload).select("id").maybeSingle();
       if (error) return toast.error(error.message);
+      salvoId = (data as any)?.id ?? null;
       toast.success("Aluno cadastrado");
     }
     setOpen(false); setEditing(null); load();
+    if (salvoId) {
+      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula }, true);
+    }
   };
 
   const remove = async (id: string) => {
