@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Users, GraduationCap, ScanLine, BarChart3, HelpCircle, ShieldCheck, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, GraduationCap, ScanLine, BarChart3, HelpCircle, ShieldCheck, LogOut, Clock } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter, useSidebar,
@@ -23,6 +23,7 @@ const items: Item[] = [
   { title: "Relatórios", url: "/relatorios", icon: BarChart3, permission: "relatorios.view" },
   { title: "Usuários", url: "/usuarios", icon: Users, permission: "usuarios.view" },
   { title: "Perfis de Acesso", url: "/perfis", icon: ShieldCheck, permission: "perfis.manage" },
+  { title: "Relógio de Ponto", url: "/relogio", icon: Clock, adminOnly: true },
   { title: "Ajuda", url: "/ajuda", icon: HelpCircle },
 ];
 
