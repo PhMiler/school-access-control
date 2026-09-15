@@ -11,7 +11,7 @@ let sessionCache: { key: string; base: string } | null = null;
 
 const TIMEOUT_MS = 8000;
 
-async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig): Promise<T> {
+async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promise<Response> {
   const url = `${baseUrl(cfg)}${path}`;
   let res: Response;
   try {
@@ -36,12 +36,23 @@ async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig):
       `O relógio respondeu com erro ${res.status} em ${path}${detalhe ? `: ${detalhe.slice(0, 200)}` : "."}`,
     );
   }
+  return res;
+}
+
+async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig): Promise<T> {
+  const res = await postRaw(path, body, cfg);
   const text = await res.text();
   try {
     return (text ? JSON.parse(text) : {}) as T;
   } catch {
     throw new Error(`Resposta inesperada do relógio em ${path}.`);
   }
+}
+
+/** Como post(), mas devolve o corpo bruto (usado pelo AFD, que vem como texto). */
+async function postText(path: string, body: unknown, cfg: ControlIdConfig): Promise<string> {
+  const res = await postRaw(path, body, cfg);
+  return res.text();
 }
 
 export async function login(cfg: ControlIdConfig = getControlIdConfig()): Promise<string> {
