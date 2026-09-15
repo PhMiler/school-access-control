@@ -248,23 +248,117 @@ function parseAfdMarcacoes(text: string): AccessLog[] {
   return logs;
 }
 
+/** Converte um registro genérico do relógio em AccessLog. */
+function normalizarRegistro(r: any): AccessLog | null {
+  if (!r || typeof r !== "object") return null;
+  const rawTime = r.time ?? r.timestamp ?? r.date ?? r.event_time ?? r.data_hora;
+  let time: number | undefined;
+  if (typeof rawTime === "number") {
+    time = rawTime > 1e12 ? Math.floor(rawTime / 1000) : rawTime;
+  } else if (typeof rawTime === "string" && rawTime.trim()) {
+    const s = rawTime.trim();
+    const num = Number(s);
+    if (!Number.isNaN(num) && /^\d+$/.test(s)) {
+      time = num > 1e12 ? Math.floor(num / 1000) : num;
+    } else {
+      const d = new Date(s.replace(" ", "T"));
+      if (!Number.isNaN(d.getTime())) time = Math.floor(d.getTime() / 1000);
+    }
+  }
+  if (!time) return null;
+  return {
+    id: typeof r.id === "number" ? r.id : undefined,
+    time,
+    event: typeof r.event === "number" ? r.event : undefined,
+    user_id: typeof r.user_id === "number" ? r.user_id : Number(r.user_id) || undefined,
+    identifier_id: r.identifier_id != null ? String(r.identifier_id) : undefined,
+    card_value: r.card_value != null ? String(r.card_value) : undefined,
+    portal_id: typeof r.portal_id === "number" ? r.portal_id : undefined,
+    pis: r.pis != null ? String(r.pis).trim() : r.cpf != null ? String(r.cpf).trim() : undefined,
+  };
+}
+
+/** Procura em qualquer resposta JSON o primeiro array de registros de batida. */
+function extrairRegistros(obj: any): any[] {
+  if (Array.isArray(obj)) return obj;
+  if (!obj || typeof obj !== "object") return [];
+  for (const v of Object.values(obj)) {
+    if (Array.isArray(v) && v.length && typeof v[0] === "object") return v as any[];
+  }
+  for (const v of Object.values(obj)) {
+    const found = extrairRegistros(v);
+    if (found.length) return found;
+  }
+  return [];
+}
+
 /**
- * Busca as batidas do relógio via arquivo AFD (Portaria 671). A linha iDClass
- * não expõe a tabela access_logs — o AFD é o canal oficial de marcações.
- * Filtra os últimos 90 dias para limitar o tamanho da resposta.
+ * Tenta as tabelas de transações do iDClass via load_objects.fcgi, sem filtro
+ * de data nem NSR inicial, para o relógio devolver tudo o que está na memória.
+ */
+async function loadLogsViaObjects(limit: number): Promise<{ logs: AccessLog[]; diagnostico: any[] }> {
+  const diagnostico: any[] = [];
+  const logs: AccessLog[] = [];
+  for (const object of ["transactions", "access_logs"]) {
+    try {
+      const data = await withSession((session, cfg) =>
+        post<any>(`/load_objects.fcgi?session=${session}`, { object, limit, order: ["-id"] }, cfg),
+      );
+      const brutos = extrairRegistros(data);
+      diagnostico.push({ fonte: `load_objects:${object}`, registros: brutos.length, amostra: brutos.slice(0, 3), resposta: data });
+      const convertidos = brutos.map(normalizarRegistro).filter((v): v is AccessLog => !!v);
+      if (convertidos.length) {
+        logs.push(...convertidos);
+        break;
+      }
+    } catch (e: any) {
+      diagnostico.push({ fonte: `load_objects:${object}`, erro: e?.message ?? String(e) });
+    }
+  }
+  return { logs, diagnostico };
+}
+
+/**
+ * Busca as batidas do relógio. Tenta primeiro as tabelas de transações do
+ * firmware (load_objects) e, se não houver nada, cai no arquivo AFD
+ * (Portaria 671) — sem filtro de data, para trazer tudo da memória.
  */
 export async function loadAccessLogs(limit = 200): Promise<AccessLog[]> {
-  const inicial = new Date();
-  inicial.setDate(inicial.getDate() - 90);
-  const initial_date = {
-    day: inicial.getDate(),
-    month: inicial.getMonth() + 1,
-    year: inicial.getFullYear(),
-  };
-  const raw = await withSession((session, cfg) =>
-    postText(`/get_afd.fcgi?session=${session}&mode=671`, { headerTop: true, initial_date }, cfg),
-  );
-  return parseAfdMarcacoes(extractAfdText(raw)).slice(0, limit);
+  const { logs: viaObjects, diagnostico } = await loadLogsViaObjects(limit);
+  if (viaObjects.length) {
+    viaObjects.sort((a, b) => (b.time ?? 0) - (a.time ?? 0));
+    console.log("Resposta do relógio na importação (load_objects):", diagnostico);
+    return viaObjects.slice(0, limit);
+  }
+
+  let afd: AccessLog[] = [];
+  let afdRaw = "";
+  try {
+    afdRaw = await withSession((session, cfg) =>
+      postText(`/get_afd.fcgi?session=${session}&mode=671`, { headerTop: true }, cfg),
+    );
+    afd = parseAfdMarcacoes(extractAfdText(afdRaw));
+  } catch (e: any) {
+    diagnostico.push({ fonte: "get_afd:671", erro: e?.message ?? String(e) });
+  }
+
+  // Alguns firmwares só respondem ao AFD legado (sem mode).
+  if (afd.length === 0) {
+    try {
+      afdRaw = await withSession((session, cfg) =>
+        postText(`/get_afd.fcgi?session=${session}`, { headerTop: true }, cfg),
+      );
+      afd = parseAfdMarcacoes(extractAfdText(afdRaw));
+      diagnostico.push({ fonte: "get_afd:legado", marcacoes: afd.length, trecho: extractAfdText(afdRaw).slice(0, 500) });
+    } catch (e: any) {
+      diagnostico.push({ fonte: "get_afd:legado", erro: e?.message ?? String(e) });
+    }
+  } else {
+    diagnostico.push({ fonte: "get_afd:671", marcacoes: afd.length, trecho: extractAfdText(afdRaw).slice(0, 500) });
+  }
+
+  console.log("Resposta do relógio na importação:", diagnostico);
+  return afd.slice(0, limit);
 }
 
 /**
