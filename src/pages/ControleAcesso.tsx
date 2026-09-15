@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Fingerprint, KeyRound, LogIn, LogOut, CheckCircle2, XCircle } from "lucide-react";
+import { Fingerprint, KeyRound, LogIn, LogOut, CheckCircle2, XCircle, Download } from "lucide-react";
+import { importarBatidas } from "@/lib/controlidImport";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -62,9 +63,15 @@ export default function ControleAcesso() {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold">Controle de Acesso</h1>
-        <p className="text-muted-foreground">Registre entradas e saídas em tempo real</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Controle de Acesso</h1>
+          <p className="text-muted-foreground">Registre entradas e saídas em tempo real</p>
+        </div>
+        <Button variant="outline" disabled={importando} onClick={importar}>
+          <Download className={`h-4 w-4 mr-2 ${importando ? "animate-pulse" : ""}`} />
+          Importar batidas do relógio
+        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
