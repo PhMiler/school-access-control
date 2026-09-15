@@ -114,5 +114,5 @@ export async function importarBatidas(registradoPor: string, limit = 200): Promi
     if (error) throw new Error(error.message);
   }
 
-  return { importadas: novos.length, ignoradas, invalidas };
+  return { importadas: novos.length, ignoradas, invalidas, ...base };
 }
