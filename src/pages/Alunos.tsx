@@ -47,6 +47,17 @@ export default function Alunos() {
   const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
 
+  /** Garante que o aluno tenha um PIS gravado na ficha (exigido pelo relógio). */
+  const garantirPis = async (id: string, pis?: string | null) => {
+    const atual = pis?.trim();
+    if (atual) return atual;
+    const novo = gerarPis();
+    const { error } = await supabase.from("alunos").update({ pis: novo }).eq("id", id);
+    if (error) return novo;
+    setList((l) => l.map((a) => (a.id === id ? { ...a, pis: novo } : a)));
+    return novo;
+  };
+
   const sincronizar = async (aluno: { id: string; nome: string; matricula: string; pis?: string | null }, silencioso = false) => {
     if (!isConfigured()) {
       setNaoSincronizados((m) => ({ ...m, [aluno.id]: "Relógio não configurado" }));
@@ -55,7 +66,8 @@ export default function Alunos() {
     }
     setSyncing(aluno.id);
     try {
-      await syncAluno(aluno);
+      const pis = await garantirPis(aluno.id, aluno.pis);
+      await syncAluno({ ...aluno, pis });
       setNaoSincronizados((m) => { const n = { ...m }; delete n[aluno.id]; return n; });
       toast.success(`${aluno.nome} sincronizado no relógio`);
       return true;
