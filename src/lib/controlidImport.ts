@@ -1,10 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
-import { loadAccessLogs, loadUsers } from "./controlid";
+import { loadAccessLogs, loadUsers, getUltimoDiagnosticoAfd } from "./controlid";
 
 export interface ImportResult {
   importadas: number;
   ignoradas: number;
   invalidas: number;
+  /** Batidas reconhecidas no arquivo do relógio. */
+  lidas: number;
+  /** Linhas recebidas do relógio (ajuda a distinguir arquivo vazio de formato não reconhecido). */
+  linhasRecebidas: number;
 }
 
 /**
@@ -13,8 +17,10 @@ export interface ImportResult {
  */
 export async function importarBatidas(registradoPor: string, limit = 200): Promise<ImportResult> {
   const [logs, users] = await Promise.all([loadAccessLogs(limit), loadUsers().catch(() => [])]);
-  console.log("Resposta do relógio na importação:", { batidas: logs, usuarios: users });
-  if (logs.length === 0) return { importadas: 0, ignoradas: 0, invalidas: 0 };
+  const diag = getUltimoDiagnosticoAfd();
+  const base = { lidas: logs.length, linhasRecebidas: diag.linhasRecebidas };
+  console.log("Resposta do relógio na importação:", { batidas: logs, usuarios: users, diagnostico: diag });
+  if (logs.length === 0) return { importadas: 0, ignoradas: 0, invalidas: 0, ...base };
 
   const matriculaPorUserId = new Map<number, string>();
   const matriculaPorIdentificador = new Map<string, string>(); // PIS ou CPF
@@ -52,7 +58,7 @@ export async function importarBatidas(registradoPor: string, limit = 200): Promi
     })
     .filter((v): v is { matricula: string; ts: Date; semVinculo: boolean } => !!v);
 
-  if (candidatos.length === 0) return { importadas: 0, ignoradas: logs.length, invalidas: 0 };
+  if (candidatos.length === 0) return { importadas: 0, ignoradas: logs.length, invalidas: 0, ...base };
 
   const maisAntiga = new Date(Math.min(...candidatos.map((c) => c.ts.getTime())));
 
@@ -108,5 +114,5 @@ export async function importarBatidas(registradoPor: string, limit = 200): Promi
     if (error) throw new Error(error.message);
   }
 
-  return { importadas: novos.length, ignoradas, invalidas };
+  return { importadas: novos.length, ignoradas, invalidas, ...base };
 }

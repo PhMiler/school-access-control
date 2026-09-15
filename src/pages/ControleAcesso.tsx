@@ -26,7 +26,17 @@ export default function ControleAcesso() {
     setImportando(true);
     try {
       const r = await importarBatidas(user!.id);
-      toast.success(`${r.importadas} batida(s) importada(s) · ${r.ignoradas} já existia(m)`);
+      if (r.lidas === 0) {
+        if (r.linhasRecebidas > 0) {
+          toast.warning(
+            `O relógio devolveu ${r.linhasRecebidas} linha(s), mas nenhuma batida foi reconhecida. Veja os detalhes no console (F12).`,
+          );
+        } else {
+          toast.info("O relógio respondeu sem nenhuma marcação registrada.");
+        }
+      } else {
+        toast.success(`${r.importadas} batida(s) importada(s) · ${r.ignoradas} já existia(m)`);
+      }
       load();
     } catch (e: any) {
       toast.error(e?.message ?? "Falha ao importar batidas do relógio");

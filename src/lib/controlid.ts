@@ -10,8 +10,15 @@ import { baseUrl, getControlIdConfig, type ControlIdConfig } from "./controlidCo
 let sessionCache: { key: string; base: string } | null = null;
 
 const TIMEOUT_MS = 8000;
+/** O relógio leva vários segundos para extrair o AFD da memória interna. */
+const AFD_TIMEOUT_MS = 30000;
 
-async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promise<Response> {
+async function postRaw(
+  path: string,
+  body: unknown,
+  cfg: ControlIdConfig,
+  timeoutMs: number = TIMEOUT_MS,
+): Promise<Response> {
   const url = `${baseUrl(cfg)}${path}`;
   let res: Response;
   try {
@@ -20,11 +27,11 @@ async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promi
       mode: "cors",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body ?? {}),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e: any) {
     if (e?.name === "TimeoutError" || e?.name === "AbortError") {
-      throw new Error(`O relógio não respondeu em ${TIMEOUT_MS / 1000}s (${baseUrl(cfg)}).`);
+      throw new Error(`O relógio não respondeu em ${timeoutMs / 1000}s (${baseUrl(cfg)}).`);
     }
     throw new Error(
       `Não foi possível falar com o relógio em ${baseUrl(cfg)}. Verifique o IP, a rede e se o certificado do equipamento já foi aceito no navegador.`,
@@ -39,8 +46,13 @@ async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promi
   return res;
 }
 
-async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig): Promise<T> {
-  const res = await postRaw(path, body, cfg);
+async function post<T = any>(
+  path: string,
+  body: unknown,
+  cfg: ControlIdConfig,
+  timeoutMs?: number,
+): Promise<T> {
+  const res = await postRaw(path, body, cfg, timeoutMs);
   const text = await res.text();
   try {
     return (text ? JSON.parse(text) : {}) as T;
@@ -50,8 +62,13 @@ async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig):
 }
 
 /** Como post(), mas devolve o corpo bruto (usado pelo AFD, que vem como texto). */
-async function postText(path: string, body: unknown, cfg: ControlIdConfig): Promise<string> {
-  const res = await postRaw(path, body, cfg);
+async function postText(
+  path: string,
+  body: unknown,
+  cfg: ControlIdConfig,
+  timeoutMs?: number,
+): Promise<string> {
+  const res = await postRaw(path, body, cfg, timeoutMs);
   return res.text();
 }
 
@@ -221,15 +238,30 @@ function extractAfdText(raw: string): string {
 }
 
 /**
- * Interpreta as marcações do arquivo AFD (registros tipo 3, formato fixo
- * comum ao formato legado e ao da Portaria 671):
- * "3" + NSR(9) + data ddmmaaaa(8) + hora HHMM(4) + PIS/CPF(12).
- * A hora do relógio é local, sem fuso — tratamos como hora local do navegador.
+ * Interpreta as marcações do arquivo AFD, aceitando os dois layouts usados
+ * pelos REPs:
+ *  - legado (1510): "3" + NSR(9) + data ddmmaaaa(8) + hora HHMM(4) + PIS(12)
+ *  - Portaria 671:  NSR(9) + "3" + aaaa-mm-ddTHH:MM:SS±hhmm + CPF/PIS(11-12)
+ * A hora sem fuso é tratada como hora local do computador.
  */
 function parseAfdMarcacoes(text: string): AccessLog[] {
   const logs: AccessLog[] = [];
   for (const linha of text.split(/\r?\n/)) {
     const l = linha.trim();
+    if (l.length < 20) continue;
+
+    // Layout 671: data/hora em ISO em qualquer posição da linha.
+    const iso = l.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (iso && (l[9] === "3" || l[0] === "3")) {
+      const ts = new Date(+iso[1], +iso[2] - 1, +iso[3], +iso[4], +iso[5], +(iso[6] ?? 0));
+      if (Number.isNaN(ts.getTime())) continue;
+      const resto = l.slice((iso.index ?? 0) + iso[0].length);
+      const ident = resto.match(/\d{11,12}/);
+      logs.push({ time: Math.floor(ts.getTime() / 1000), pis: ident ? ident[0].trim() : undefined });
+      continue;
+    }
+
+    // Layout legado (posições fixas).
     if (l.length < 34 || l[0] !== "3") continue;
     const data = l.slice(10, 18);
     const hora = l.slice(18, 22);
@@ -248,117 +280,61 @@ function parseAfdMarcacoes(text: string): AccessLog[] {
   return logs;
 }
 
-/** Converte um registro genérico do relógio em AccessLog. */
-function normalizarRegistro(r: any): AccessLog | null {
-  if (!r || typeof r !== "object") return null;
-  const rawTime = r.time ?? r.timestamp ?? r.date ?? r.event_time ?? r.data_hora;
-  let time: number | undefined;
-  if (typeof rawTime === "number") {
-    time = rawTime > 1e12 ? Math.floor(rawTime / 1000) : rawTime;
-  } else if (typeof rawTime === "string" && rawTime.trim()) {
-    const s = rawTime.trim();
-    const num = Number(s);
-    if (!Number.isNaN(num) && /^\d+$/.test(s)) {
-      time = num > 1e12 ? Math.floor(num / 1000) : num;
-    } else {
-      const d = new Date(s.replace(" ", "T"));
-      if (!Number.isNaN(d.getTime())) time = Math.floor(d.getTime() / 1000);
-    }
-  }
-  if (!time) return null;
-  return {
-    id: typeof r.id === "number" ? r.id : undefined,
-    time,
-    event: typeof r.event === "number" ? r.event : undefined,
-    user_id: typeof r.user_id === "number" ? r.user_id : Number(r.user_id) || undefined,
-    identifier_id: r.identifier_id != null ? String(r.identifier_id) : undefined,
-    card_value: r.card_value != null ? String(r.card_value) : undefined,
-    portal_id: typeof r.portal_id === "number" ? r.portal_id : undefined,
-    pis: r.pis != null ? String(r.pis).trim() : r.cpf != null ? String(r.cpf).trim() : undefined,
-  };
+/** Última leitura do AFD, para diagnóstico na tela e no console. */
+export interface AfdDiagnostico {
+  tentativas: { fonte: string; marcacoes?: number; linhas?: number; trecho?: string; erro?: string }[];
+  linhasRecebidas: number;
 }
 
-/** Procura em qualquer resposta JSON o primeiro array de registros de batida. */
-function extrairRegistros(obj: any): any[] {
-  if (Array.isArray(obj)) return obj;
-  if (!obj || typeof obj !== "object") return [];
-  for (const v of Object.values(obj)) {
-    if (Array.isArray(v) && v.length && typeof v[0] === "object") return v as any[];
-  }
-  for (const v of Object.values(obj)) {
-    const found = extrairRegistros(v);
-    if (found.length) return found;
-  }
-  return [];
+let ultimoDiagnostico: AfdDiagnostico = { tentativas: [], linhasRecebidas: 0 };
+
+export function getUltimoDiagnosticoAfd(): AfdDiagnostico {
+  return ultimoDiagnostico;
 }
 
 /**
- * Tenta as tabelas de transações do iDClass via load_objects.fcgi, sem filtro
- * de data nem NSR inicial, para o relógio devolver tudo o que está na memória.
+ * Busca as batidas do relógio pelo arquivo AFD. Tenta mode 671, depois sem
+ * parâmetro e por fim 1510, sem filtro de data nem NSR inicial, para o
+ * equipamento devolver tudo o que está gravado na memória.
  */
-async function loadLogsViaObjects(limit: number): Promise<{ logs: AccessLog[]; diagnostico: any[] }> {
-  const diagnostico: any[] = [];
-  const logs: AccessLog[] = [];
-  for (const object of ["transactions", "access_logs"]) {
+export async function loadAccessLogs(limit = 200): Promise<AccessLog[]> {
+  const tentativas: AfdDiagnostico["tentativas"] = [];
+  let logs: AccessLog[] = [];
+  let linhasRecebidas = 0;
+
+  const variantes: { fonte: string; body: unknown }[] = [
+    { fonte: "get_afd mode=671", body: { mode: "671" } },
+    { fonte: "get_afd sem parâmetro", body: {} },
+    { fonte: "get_afd mode=1510", body: { mode: "1510" } },
+  ];
+
+  for (const v of variantes) {
     try {
-      const data = await withSession((session, cfg) =>
-        post<any>(`/load_objects.fcgi?session=${session}`, { object, limit, order: ["-id"] }, cfg),
+      const raw = await withSession((session, cfg) =>
+        postText(`/get_afd.fcgi?session=${session}`, v.body, cfg, AFD_TIMEOUT_MS),
       );
-      const brutos = extrairRegistros(data);
-      diagnostico.push({ fonte: `load_objects:${object}`, registros: brutos.length, amostra: brutos.slice(0, 3), resposta: data });
-      const convertidos = brutos.map(normalizarRegistro).filter((v): v is AccessLog => !!v);
-      if (convertidos.length) {
-        logs.push(...convertidos);
+      const texto = extractAfdText(raw);
+      const linhas = texto.split(/\r?\n/).filter((l) => l.trim().length > 0).length;
+      const marcacoes = parseAfdMarcacoes(texto);
+      linhasRecebidas = Math.max(linhasRecebidas, linhas);
+      tentativas.push({
+        fonte: v.fonte,
+        linhas,
+        marcacoes: marcacoes.length,
+        trecho: texto.slice(0, 600),
+      });
+      if (marcacoes.length > 0) {
+        logs = marcacoes;
         break;
       }
     } catch (e: any) {
-      diagnostico.push({ fonte: `load_objects:${object}`, erro: e?.message ?? String(e) });
+      tentativas.push({ fonte: v.fonte, erro: e?.message ?? String(e) });
     }
   }
-  return { logs, diagnostico };
-}
 
-/**
- * Busca as batidas do relógio. Tenta primeiro as tabelas de transações do
- * firmware (load_objects) e, se não houver nada, cai no arquivo AFD
- * (Portaria 671) — sem filtro de data, para trazer tudo da memória.
- */
-export async function loadAccessLogs(limit = 200): Promise<AccessLog[]> {
-  const { logs: viaObjects, diagnostico } = await loadLogsViaObjects(limit);
-  if (viaObjects.length) {
-    viaObjects.sort((a, b) => (b.time ?? 0) - (a.time ?? 0));
-    console.log("Resposta do relógio na importação (load_objects):", diagnostico);
-    return viaObjects.slice(0, limit);
-  }
-
-  let afd: AccessLog[] = [];
-  let afdRaw = "";
-  try {
-    afdRaw = await withSession((session, cfg) =>
-      postText(`/get_afd.fcgi?session=${session}&mode=671`, { headerTop: true }, cfg),
-    );
-    afd = parseAfdMarcacoes(extractAfdText(afdRaw));
-  } catch (e: any) {
-    diagnostico.push({ fonte: "get_afd:671", erro: e?.message ?? String(e) });
-  }
-
-  // Alguns firmwares só respondem ao AFD legado (sem mode).
-  if (afd.length === 0) {
-    try {
-      afdRaw = await withSession((session, cfg) =>
-        postText(`/get_afd.fcgi?session=${session}`, { headerTop: true }, cfg),
-      );
-      afd = parseAfdMarcacoes(extractAfdText(afdRaw));
-      diagnostico.push({ fonte: "get_afd:legado", marcacoes: afd.length, trecho: extractAfdText(afdRaw).slice(0, 500) });
-    } catch (e: any) {
-      diagnostico.push({ fonte: "get_afd:legado", erro: e?.message ?? String(e) });
-    }
-  } else {
-    diagnostico.push({ fonte: "get_afd:671", marcacoes: afd.length, trecho: extractAfdText(afdRaw).slice(0, 500) });
-  }
-
-  console.log("Resposta do relógio na importação:", diagnostico);
-  return afd.slice(0, limit);
+  ultimoDiagnostico = { tentativas, linhasRecebidas };
+  console.log("Resposta do relógio na importação (AFD):", ultimoDiagnostico);
+  return logs.slice(0, limit);
 }
 
 /**
