@@ -10,8 +10,15 @@ import { baseUrl, getControlIdConfig, type ControlIdConfig } from "./controlidCo
 let sessionCache: { key: string; base: string } | null = null;
 
 const TIMEOUT_MS = 8000;
+/** O relógio leva vários segundos para extrair o AFD da memória interna. */
+const AFD_TIMEOUT_MS = 30000;
 
-async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promise<Response> {
+async function postRaw(
+  path: string,
+  body: unknown,
+  cfg: ControlIdConfig,
+  timeoutMs: number = TIMEOUT_MS,
+): Promise<Response> {
   const url = `${baseUrl(cfg)}${path}`;
   let res: Response;
   try {
@@ -20,11 +27,11 @@ async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promi
       mode: "cors",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body ?? {}),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e: any) {
     if (e?.name === "TimeoutError" || e?.name === "AbortError") {
-      throw new Error(`O relógio não respondeu em ${TIMEOUT_MS / 1000}s (${baseUrl(cfg)}).`);
+      throw new Error(`O relógio não respondeu em ${timeoutMs / 1000}s (${baseUrl(cfg)}).`);
     }
     throw new Error(
       `Não foi possível falar com o relógio em ${baseUrl(cfg)}. Verifique o IP, a rede e se o certificado do equipamento já foi aceito no navegador.`,
@@ -39,8 +46,13 @@ async function postRaw(path: string, body: unknown, cfg: ControlIdConfig): Promi
   return res;
 }
 
-async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig): Promise<T> {
-  const res = await postRaw(path, body, cfg);
+async function post<T = any>(
+  path: string,
+  body: unknown,
+  cfg: ControlIdConfig,
+  timeoutMs?: number,
+): Promise<T> {
+  const res = await postRaw(path, body, cfg, timeoutMs);
   const text = await res.text();
   try {
     return (text ? JSON.parse(text) : {}) as T;
@@ -50,8 +62,13 @@ async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig):
 }
 
 /** Como post(), mas devolve o corpo bruto (usado pelo AFD, que vem como texto). */
-async function postText(path: string, body: unknown, cfg: ControlIdConfig): Promise<string> {
-  const res = await postRaw(path, body, cfg);
+async function postText(
+  path: string,
+  body: unknown,
+  cfg: ControlIdConfig,
+  timeoutMs?: number,
+): Promise<string> {
+  const res = await postRaw(path, body, cfg, timeoutMs);
   return res.text();
 }
 
