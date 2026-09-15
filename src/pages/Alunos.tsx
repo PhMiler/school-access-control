@@ -195,7 +195,20 @@ export default function Alunos() {
               )}
               {filtered.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-medium">{a.nome}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      {a.nome}
+                      {naoSincronizados[a.id] && (
+                        <span
+                          title={`Não sincronizado no relógio: ${naoSincronizados[a.id]}`}
+                          className="inline-flex items-center gap-1 text-xs text-destructive"
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          não sincronizado
+                        </span>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell><code className="text-xs">{a.matricula}</code></TableCell>
                   <TableCell>{a.curso}</TableCell>
                   <TableCell>{a.turma}</TableCell>
