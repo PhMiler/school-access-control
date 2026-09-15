@@ -20,6 +20,20 @@ export default function ControleAcesso() {
   const [busy, setBusy] = useState(false);
   const [recentes, setRecentes] = useState<any[]>([]);
   const [feedback, setFeedback] = useState<{ ok: boolean; nome?: string; matricula?: string } | null>(null);
+  const [importando, setImportando] = useState(false);
+
+  const importar = async () => {
+    setImportando(true);
+    try {
+      const r = await importarBatidas(user!.id);
+      toast.success(`${r.importadas} batida(s) importada(s) · ${r.ignoradas} já existia(m)`);
+      load();
+    } catch (e: any) {
+      toast.error(e?.message ?? "Falha ao importar batidas do relógio");
+    } finally {
+      setImportando(false);
+    }
+  };
 
   const load = async () => {
     const { data } = await supabase.from("acessos")
