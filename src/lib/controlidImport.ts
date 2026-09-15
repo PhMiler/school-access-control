@@ -16,20 +16,40 @@ export async function importarBatidas(registradoPor: string, limit = 200): Promi
   if (logs.length === 0) return { importadas: 0, ignoradas: 0, invalidas: 0 };
 
   const matriculaPorUserId = new Map<number, string>();
+  const matriculaPorIdentificador = new Map<string, string>(); // PIS ou CPF
   for (const u of users) {
-    if (typeof u.id === "number" && u.registration) matriculaPorUserId.set(u.id, String(u.registration));
+    const registration = u.registration ? String(u.registration).trim() : "";
+    if (!registration) continue;
+    if (typeof u.id === "number") matriculaPorUserId.set(u.id, registration);
+    for (const ident of [u.pis, u.cpf]) {
+      if (ident == null) continue;
+      const s = String(ident).trim();
+      if (!s) continue;
+      // AFD trás o PIS/CPF com zeros à esquerda; guarda as duas formas.
+      matriculaPorIdentificador.set(s, registration);
+      matriculaPorIdentificador.set(s.replace(/^0+/, ""), registration);
+    }
   }
 
   const candidatos = logs
     .map((l) => {
+      const identificador = l.pis ? String(l.pis).trim() : "";
       const matricula =
+        (identificador
+          ? matriculaPorIdentificador.get(identificador) ??
+            matriculaPorIdentificador.get(identificador.replace(/^0+/, ""))
+          : undefined) ??
         (typeof l.user_id === "number" ? matriculaPorUserId.get(l.user_id) : undefined) ??
         (l.card_value ? String(l.card_value) : undefined) ??
         (l.identifier_id ? String(l.identifier_id) : undefined);
       const ts = l.time ? new Date(l.time * 1000) : null;
-      return matricula && ts ? { matricula: matricula.trim(), ts } : null;
+      if (!ts) return null;
+      // Batida com PIS que não casou com nenhum usuário do relógio ainda é
+      // importada (como inválida), usando o próprio PIS como matrícula tentada.
+      const matriculaTentada = matricula?.trim() || (identificador ? `PIS ${identificador}` : null);
+      return matriculaTentada ? { matricula: matriculaTentada, ts, semVinculo: !matricula } : null;
     })
-    .filter((v): v is { matricula: string; ts: Date } => !!v);
+    .filter((v): v is { matricula: string; ts: Date; semVinculo: boolean } => !!v);
 
   if (candidatos.length === 0) return { importadas: 0, ignoradas: logs.length, invalidas: 0 };
 
