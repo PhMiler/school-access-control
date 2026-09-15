@@ -133,8 +133,14 @@ export default function Alunos() {
   };
   useEffect(() => { load(); }, []);
 
-  const abrirNovo = () => { setEditing(null); setSelecionados([]); setOpen(true); };
-  const abrirEdicao = (a: Aluno) => { setEditing(a); setSelecionados(vinculos[a.id] ?? []); setOpen(true); };
+  const abrirNovo = () => { setEditing(null); setSelecionados([]); setNascimento(""); setOpen(true); };
+  const abrirEdicao = (a: Aluno) => {
+    setEditing(a);
+    setSelecionados(vinculos[a.id] ?? []);
+    setNascimento(a.data_nascimento?.slice(0, 10) ?? "");
+    setOpen(true);
+  };
+
 
   const salvarCursos = async (alunoId: string) => {
     await supabase.from("aluno_cursos").delete().eq("aluno_id", alunoId);
