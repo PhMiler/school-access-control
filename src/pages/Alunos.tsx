@@ -283,16 +283,11 @@ export default function Alunos() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2">
-                    <Label>Telefone</Label>
-                    <Input name="telefone" defaultValue={editing?.telefone ?? ""} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Email</Label>
-                    <Input name="email" type="email" defaultValue={editing?.email ?? ""} />
-                  </div>
+                <div className="grid gap-2">
+                  <Label>Email <span className="text-muted-foreground text-xs">(opcional)</span></Label>
+                  <Input name="email" type="email" defaultValue={editing?.email ?? ""} />
                 </div>
+
                 <div className="grid gap-2">
                   <Label>Cursos / turmas</Label>
                   <ScrollArea className="h-44 rounded-md border p-3">
