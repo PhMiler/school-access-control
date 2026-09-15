@@ -224,7 +224,7 @@ export default function Alunos() {
           <p className="text-muted-foreground">Cadastro completo da instituição</p>
         </div>
         {canCreate && (
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setSelecionados([]); } }}>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setSelecionados([]); setNascimento(""); } }}>
             <DialogTrigger asChild>
               <Button onClick={abrirNovo}><Plus className="h-4 w-4 mr-2" />Novo aluno</Button>
             </DialogTrigger>
