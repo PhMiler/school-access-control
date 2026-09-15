@@ -98,11 +98,15 @@ export interface AlunoParaSincronizar {
 }
 
 /**
- * Gera um PIS válido de 11 dígitos (10 aleatórios + dígito verificador
- * calculado com os pesos oficiais 3-2-9-8-7-6-5-4-3-2).
+ * Gera um PIS válido de 11 dígitos: primeiro dígito 1 ou 2 (padrão brasileiro,
+ * exigido pelos validadores do iDClass), 9 dígitos aleatórios e o dígito
+ * verificador com os pesos oficiais 3-2-9-8-7-6-5-4-3-2.
  */
 export function gerarPis(): string {
-  const base = Array.from({ length: 10 }, () => Math.floor(Math.random() * 10));
+  const base = [
+    1 + Math.floor(Math.random() * 2),
+    ...Array.from({ length: 9 }, () => Math.floor(Math.random() * 10)),
+  ];
   const pesos = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
   const soma = base.reduce((acc, d, i) => acc + d * pesos[i], 0);
   let dv = 11 - (soma % 11);
@@ -115,15 +119,27 @@ export function gerarPis(): string {
  * Endpoint e payload nativos do iDClass, conforme a documentação oficial:
  * POST /add_users.fcgi?session= com { users: [{ name, registration, pis }] }.
  * O firmware exige um PIS válido (11 dígitos com dígito verificador) — usa o
- * PIS gravado no cadastro do aluno ou gera um na hora.
+ * PIS gravado no cadastro do aluno ou gera um na hora. Alguns firmwares
+ * esperam o PIS como número, outros como string: tenta número e refaz com
+ * string se o equipamento recusar.
  */
 export async function syncAluno(aluno: AlunoParaSincronizar) {
   const pis = (aluno.pis && aluno.pis.trim()) || gerarPis();
-  return withSession(async (session, cfg) => {
-    return post(`/add_users.fcgi?session=${session}`, {
-      users: [{ name: aluno.nome, registration: String(aluno.matricula), pis }],
-    }, cfg);
-  });
+  const enviar = (pisValor: string | number) =>
+    withSession(async (session, cfg) =>
+      post(`/add_users.fcgi?session=${session}`, {
+        users: [{ name: aluno.nome, registration: String(aluno.matricula), pis: pisValor }],
+      }, cfg),
+    );
+  try {
+    return await enviar(Number(pis));
+  } catch (e: any) {
+    try {
+      return await enviar(pis);
+    } catch (e2: any) {
+      throw new Error(e2?.message || e?.message || "Falha ao cadastrar o aluno no relógio");
+    }
+  }
 }
 
 export interface AccessLog {
