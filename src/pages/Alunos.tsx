@@ -28,22 +28,35 @@ interface Aluno {
   id: string; nome: string; matricula: string; status: "ativo" | "inativo";
   deleted_at: string | null; pis: string | null;
   cpf: string | null; rg: string | null; genero: string | null; idade: string | null;
-  telefone: string | null; email: string | null;
+  telefone: string | null; email: string | null; data_nascimento: string | null;
 }
 
 interface Curso { id: string; nome: string }
 
+/** Idade em anos completos a partir de uma data (YYYY-MM-DD). */
+export function calcularIdade(dataNascimento?: string | null): number | null {
+  if (!dataNascimento) return null;
+  const [ano, mes, dia] = dataNascimento.slice(0, 10).split("-").map(Number);
+  if (!ano || !mes || !dia) return null;
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - ano;
+  const aniversarioPassou =
+    hoje.getMonth() + 1 > mes || (hoje.getMonth() + 1 === mes && hoje.getDate() >= dia);
+  if (!aniversarioPassou) idade -= 1;
+  return idade >= 0 && idade < 130 ? idade : null;
+}
+
 const schema = z.object({
   nome: z.string().trim().min(2, "Informe o nome completo").max(120),
-  matricula: z.string().trim().min(1, "Informe a matrícula").max(50),
   status: z.enum(["ativo", "inativo"]),
+  data_nascimento: z.string().trim().min(10, "Informe a data de nascimento"),
+  genero: z.string().trim().min(1, "Informe o gênero").max(30),
+  telefone: z.string().trim().min(8, "Informe o telefone").max(40),
   cpf: z.string().trim().max(20).optional(),
   rg: z.string().trim().max(20).optional(),
-  genero: z.string().trim().max(30).optional(),
-  idade: z.string().trim().max(20).optional(),
-  telefone: z.string().trim().max(40).optional(),
   email: z.string().trim().max(120).optional(),
 });
+
 
 export default function Alunos() {
   const { can } = useAuth();
@@ -57,6 +70,8 @@ export default function Alunos() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Aluno | null>(null);
   const [selecionados, setSelecionados] = useState<string[]>([]);
+  const [nascimento, setNascimento] = useState("");
+
   const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
 
@@ -118,8 +133,14 @@ export default function Alunos() {
   };
   useEffect(() => { load(); }, []);
 
-  const abrirNovo = () => { setEditing(null); setSelecionados([]); setOpen(true); };
-  const abrirEdicao = (a: Aluno) => { setEditing(a); setSelecionados(vinculos[a.id] ?? []); setOpen(true); };
+  const abrirNovo = () => { setEditing(null); setSelecionados([]); setNascimento(""); setOpen(true); };
+  const abrirEdicao = (a: Aluno) => {
+    setEditing(a);
+    setSelecionados(vinculos[a.id] ?? []);
+    setNascimento(a.data_nascimento?.slice(0, 10) ?? "");
+    setOpen(true);
+  };
+
 
   const salvarCursos = async (alunoId: string) => {
     await supabase.from("aluno_cursos").delete().eq("aluno_id", alunoId);
@@ -136,39 +157,46 @@ export default function Alunos() {
     const fd = new FormData(e.currentTarget);
     const parsed = schema.safeParse(Object.fromEntries(fd));
     if (!parsed.success) { toast.error(parsed.error.errors[0].message); return; }
+    if (!selecionados.length) { toast.error("Selecione pelo menos um curso"); return; }
+    const idade = calcularIdade(parsed.data.data_nascimento);
+    if (idade === null) { toast.error("Data de nascimento inválida"); return; }
     const vazio = (v?: string) => (v && v.trim() ? v.trim() : null);
     const payload = {
       nome: parsed.data.nome,
-      matricula: parsed.data.matricula,
       status: parsed.data.status,
+      data_nascimento: parsed.data.data_nascimento,
+      genero: parsed.data.genero,
+      idade: String(idade),
+      telefone: parsed.data.telefone,
       cpf: vazio(parsed.data.cpf),
       rg: vazio(parsed.data.rg),
-      genero: vazio(parsed.data.genero),
-      idade: vazio(parsed.data.idade),
-      telefone: vazio(parsed.data.telefone),
       email: vazio(parsed.data.email),
     };
     // Garante um PIS por aluno (exigido pelo firmware do relógio iDClass)
     const pis = editing?.pis || gerarPis();
     const payloadCompleto = editing?.pis ? payload : { ...payload, pis };
     let salvoId: string | null = null;
+    let matriculaSalva = editing?.matricula ?? "";
     if (editing) {
       const { error } = await supabase.from("alunos").update(payloadCompleto).eq("id", editing.id);
       if (error) return toast.error(error.message);
       salvoId = editing.id;
       toast.success("Aluno atualizado");
     } else {
-      const { data, error } = await supabase.from("alunos").insert(payloadCompleto).select("id").maybeSingle();
+      const { data, error } = await supabase
+        .from("alunos").insert(payloadCompleto as any).select("id,matricula").maybeSingle();
       if (error) return toast.error(error.message);
       salvoId = (data as any)?.id ?? null;
-      toast.success("Aluno cadastrado");
+      matriculaSalva = (data as any)?.matricula ?? "";
+      toast.success(`Aluno cadastrado — matrícula ${matriculaSalva}`);
     }
     if (salvoId) await salvarCursos(salvoId);
     setOpen(false); setEditing(null); setSelecionados([]); load();
     if (salvoId) {
-      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula, pis }, true);
+      void sincronizar({ id: salvoId, nome: payload.nome, matricula: matriculaSalva, pis }, true);
     }
   };
+
 
   const remove = async (id: string) => {
     const { error } = await supabase.from("alunos")
@@ -196,7 +224,7 @@ export default function Alunos() {
           <p className="text-muted-foreground">Cadastro completo da instituição</p>
         </div>
         {canCreate && (
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setSelecionados([]); } }}>
+          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setSelecionados([]); setNascimento(""); } }}>
             <DialogTrigger asChild>
               <Button onClick={abrirNovo}><Plus className="h-4 w-4 mr-2" />Novo aluno</Button>
             </DialogTrigger>
@@ -209,8 +237,20 @@ export default function Alunos() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label>Matrícula</Label>
-                    <Input name="matricula" defaultValue={editing?.matricula} required />
+                    <Label>Data de nascimento</Label>
+                    <Input
+                      name="data_nascimento"
+                      type="date"
+                      max={new Date().toISOString().slice(0, 10)}
+                      value={nascimento}
+                      onChange={(e) => setNascimento(e.target.value)}
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {calcularIdade(nascimento) !== null
+                        ? `${calcularIdade(nascimento)} anos`
+                        : "A idade é calculada automaticamente"}
+                    </p>
                   </div>
                   <div className="grid gap-2">
                     <Label>Status</Label>
@@ -225,34 +265,37 @@ export default function Alunos() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-2">
-                    <Label>CPF</Label>
+                    <Label>Gênero</Label>
+                    <Select name="genero" defaultValue={editing?.genero ?? ""}>
+                      <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Feminino">Feminino</SelectItem>
+                        <SelectItem value="Masculino">Masculino</SelectItem>
+                        <SelectItem value="Outro">Outro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Telefone</Label>
+                    <Input name="telefone" defaultValue={editing?.telefone ?? ""} required />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>CPF <span className="text-muted-foreground text-xs">(opcional)</span></Label>
                     <Input name="cpf" defaultValue={editing?.cpf ?? ""} />
                   </div>
                   <div className="grid gap-2">
-                    <Label>RG</Label>
+                    <Label>RG <span className="text-muted-foreground text-xs">(opcional)</span></Label>
                     <Input name="rg" defaultValue={editing?.rg ?? ""} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2">
-                    <Label>Gênero</Label>
-                    <Input name="genero" defaultValue={editing?.genero ?? ""} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Idade</Label>
-                    <Input name="idade" defaultValue={editing?.idade ?? ""} />
-                  </div>
+
+                <div className="grid gap-2">
+                  <Label>Email <span className="text-muted-foreground text-xs">(opcional)</span></Label>
+                  <Input name="email" type="email" defaultValue={editing?.email ?? ""} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-2">
-                    <Label>Telefone</Label>
-                    <Input name="telefone" defaultValue={editing?.telefone ?? ""} />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Email</Label>
-                    <Input name="email" type="email" defaultValue={editing?.email ?? ""} />
-                  </div>
-                </div>
+
                 <div className="grid gap-2">
                   <Label>Cursos / turmas</Label>
                   <ScrollArea className="h-44 rounded-md border p-3">
@@ -316,7 +359,16 @@ export default function Alunos() {
                         </span>
                       )}
                     </span>
-                    {a.idade && <div className="text-xs text-muted-foreground">{a.idade}{a.genero ? ` · ${a.genero}` : ""}</div>}
+                    {(() => {
+                      const anos = calcularIdade(a.data_nascimento) ?? (a.idade ? Number(a.idade) : null);
+                      const texto = anos !== null && !Number.isNaN(anos) ? `${anos} anos` : a.idade ?? "";
+                      return texto || a.genero ? (
+                        <div className="text-xs text-muted-foreground">
+                          {texto}{texto && a.genero ? " · " : ""}{a.genero ?? ""}
+                        </div>
+                      ) : null;
+                    })()}
+
                   </TableCell>
                   <TableCell>
                     <code className="text-xs">{a.matricula}</code>

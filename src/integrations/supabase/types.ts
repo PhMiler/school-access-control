@@ -129,6 +129,7 @@ export type Database = {
           cpf: string | null
           created_at: string
           curso: string | null
+          data_nascimento: string | null
           deleted_at: string | null
           email: string | null
           genero: string | null
@@ -147,12 +148,13 @@ export type Database = {
           cpf?: string | null
           created_at?: string
           curso?: string | null
+          data_nascimento?: string | null
           deleted_at?: string | null
           email?: string | null
           genero?: string | null
           id?: string
           idade?: string | null
-          matricula: string
+          matricula?: string
           nome: string
           pis?: string | null
           rg?: string | null
@@ -165,6 +167,7 @@ export type Database = {
           cpf?: string | null
           created_at?: string
           curso?: string | null
+          data_nascimento?: string | null
           deleted_at?: string | null
           email?: string | null
           genero?: string | null
