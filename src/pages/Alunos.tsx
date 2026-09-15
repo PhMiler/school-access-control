@@ -89,21 +89,24 @@ export default function Alunos() {
       turma: parsed.data.turma!,
       status: parsed.data.status!,
     };
+    // Garante um PIS por aluno (exigido pelo firmware do relógio iDClass)
+    const pis = editing?.pis || gerarPis();
+    const payloadCompleto = editing?.pis ? payload : { ...payload, pis };
     let salvoId: string | null = null;
     if (editing) {
-      const { error } = await supabase.from("alunos").update(payload).eq("id", editing.id);
+      const { error } = await supabase.from("alunos").update(payloadCompleto).eq("id", editing.id);
       if (error) return toast.error(error.message);
       salvoId = editing.id;
       toast.success("Aluno atualizado");
     } else {
-      const { data, error } = await supabase.from("alunos").insert(payload).select("id").maybeSingle();
+      const { data, error } = await supabase.from("alunos").insert(payloadCompleto).select("id").maybeSingle();
       if (error) return toast.error(error.message);
       salvoId = (data as any)?.id ?? null;
       toast.success("Aluno cadastrado");
     }
     setOpen(false); setEditing(null); load();
     if (salvoId) {
-      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula }, true);
+      void sincronizar({ id: salvoId, nome: payload.nome, matricula: payload.matricula, pis }, true);
     }
   };
 
@@ -209,7 +212,10 @@ export default function Alunos() {
                       )}
                     </span>
                   </TableCell>
-                  <TableCell><code className="text-xs">{a.matricula}</code></TableCell>
+                  <TableCell>
+                    <code className="text-xs">{a.matricula}</code>
+                    {a.pis && <div className="text-xs text-muted-foreground" title="PIS usado no relógio de ponto">PIS {a.pis}</div>}
+                  </TableCell>
                   <TableCell>{a.curso}</TableCell>
                   <TableCell>{a.turma}</TableCell>
                   <TableCell>
@@ -221,7 +227,7 @@ export default function Alunos() {
                       size="icon"
                       title="Sincronizar com o relógio"
                       disabled={syncing === a.id}
-                      onClick={() => sincronizar({ id: a.id, nome: a.nome, matricula: a.matricula })}
+                      onClick={() => sincronizar({ id: a.id, nome: a.nome, matricula: a.matricula, pis: a.pis })}
                     >
                       <RefreshCw className={`h-4 w-4 ${syncing === a.id ? "animate-spin" : ""}`} />
                     </Button>
