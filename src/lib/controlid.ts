@@ -30,7 +30,12 @@ async function post<T = any>(path: string, body: unknown, cfg: ControlIdConfig):
       `Não foi possível falar com o relógio em ${baseUrl(cfg)}. Verifique o IP, a rede e se o certificado do equipamento já foi aceito no navegador.`,
     );
   }
-  if (!res.ok) throw new Error(`O relógio respondeu com erro ${res.status} em ${path}.`);
+  if (!res.ok) {
+    const detalhe = await res.text().catch(() => "");
+    throw new Error(
+      `O relógio respondeu com erro ${res.status} em ${path}${detalhe ? `: ${detalhe.slice(0, 200)}` : "."}`,
+    );
+  }
   const text = await res.text();
   try {
     return (text ? JSON.parse(text) : {}) as T;
@@ -80,24 +85,31 @@ export interface AlunoParaSincronizar {
   matricula: string;
 }
 
-/** Cria/atualiza o aluno como usuário do relógio, com a matrícula como cartão. */
+/**
+ * Cria o aluno como usuário do relógio, com a matrícula como cartão.
+ * Payload estrito conforme a documentação oficial da Control iD:
+ * { object: "users", values: [{ name, registration }] } — sem id manual
+ * (o relógio autogera) e sem campos extras, que alguns firmwares rejeitam
+ * com erro 400. Se o equipamento recusar, reenvia uma única vez incluindo
+ * password: "" (firmwares antigos exigem o campo presente).
+ */
 export async function syncAluno(aluno: AlunoParaSincronizar) {
-  return withSession((session, cfg) =>
-    post(
-      `/create_objects.fcgi?session=${session}`,
-      {
-        object: "users",
-        values: [
-          {
-            name: aluno.nome,
-            registration: aluno.matricula,
-            password: "",
-          },
-        ],
-      },
-      cfg,
-    ),
-  );
+  return withSession(async (session, cfg) => {
+    const base = {
+      name: aluno.nome,
+      registration: String(aluno.matricula),
+    };
+    try {
+      return await post(`/create_objects.fcgi?session=${session}`, { object: "users", values: [base] }, cfg);
+    } catch (e: any) {
+      if (!/\b400\b/.test(e?.message ?? "")) throw e;
+      return await post(
+        `/create_objects.fcgi?session=${session}`,
+        { object: "users", values: [{ ...base, password: "" }] },
+        cfg,
+      );
+    }
+  });
 }
 
 export interface AccessLog {
