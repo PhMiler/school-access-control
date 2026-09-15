@@ -19,12 +19,12 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Search, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { syncAluno } from "@/lib/controlid";
+import { syncAluno, gerarPis } from "@/lib/controlid";
 import { isConfigured } from "@/lib/controlidConfig";
 
 interface Aluno {
   id: string; nome: string; matricula: string; curso: string; turma: string;
-  status: "ativo" | "inativo"; deleted_at: string | null;
+  status: "ativo" | "inativo"; deleted_at: string | null; pis: string | null;
 }
 
 const schema = z.object({
@@ -47,7 +47,7 @@ export default function Alunos() {
   const [naoSincronizados, setNaoSincronizados] = useState<Record<string, string>>({});
   const [syncing, setSyncing] = useState<string | null>(null);
 
-  const sincronizar = async (aluno: { id: string; nome: string; matricula: string }, silencioso = false) => {
+  const sincronizar = async (aluno: { id: string; nome: string; matricula: string; pis?: string | null }, silencioso = false) => {
     if (!isConfigured()) {
       setNaoSincronizados((m) => ({ ...m, [aluno.id]: "Relógio não configurado" }));
       if (!silencioso) toast.warning("Relógio não configurado — configure em Relógio de Ponto");
