@@ -10,7 +10,7 @@ export function Logo({ variant = "dark" }: { variant?: "dark" | "light" }) {
         <GraduationCap className="h-6 w-6" strokeWidth={2.2} />
       </div>
       <div className="leading-tight">
-        <div className={`font-bold text-base ${text}`}>EduAcesso</div>
+        <div className={`font-bold text-base ${text}`}>EduControl</div>
         <div className={`text-[10px] uppercase tracking-wider ${subtitle}`}>Controle Institucional</div>
       </div>
     </div>
