@@ -97,49 +97,56 @@ export interface AlunoParaSincronizar {
   pis?: string | null;
 }
 
+const PIS_PESOS = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+/** Dígito verificador oficial do PIS/PASEP a partir dos 10 primeiros dígitos. */
+function pisDv(base: number[]): number {
+  const soma = base.reduce((acc, val, i) => acc + val * PIS_PESOS[i], 0);
+  const resto = soma % 11;
+  let dv = 11 - resto;
+  if (dv === 10 || dv === 11) dv = 0;
+  return dv;
+}
+
 /**
  * Gera um PIS válido de 11 dígitos: primeiro dígito 1 ou 2 (padrão brasileiro,
- * exigido pelos validadores do iDClass), 9 dígitos aleatórios e o dígito
+ * exigido pelo firmware do iDClass), 9 dígitos aleatórios e o dígito
  * verificador com os pesos oficiais 3-2-9-8-7-6-5-4-3-2.
  */
 export function gerarPis(): string {
-  const base = [
-    1 + Math.floor(Math.random() * 2),
-    ...Array.from({ length: 9 }, () => Math.floor(Math.random() * 10)),
-  ];
-  const pesos = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  const soma = base.reduce((acc, d, i) => acc + d * pesos[i], 0);
-  let dv = 11 - (soma % 11);
-  if (dv >= 10) dv = 0;
-  return [...base, dv].join("");
+  const d1 = Math.floor(Math.random() * 2) + 1; // 1 ou 2
+  const d2_10 = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+  const base = [d1, ...d2_10];
+  return [...base, pisDv(base)].join("");
+}
+
+/** Confere se o texto é um PIS de 11 dígitos com dígito verificador correto. */
+export function pisValido(valor: string): boolean {
+  const d = valor.replace(/\D/g, "");
+  if (d.length !== 11) return false;
+  const base = d.slice(0, 10).split("").map(Number);
+  return pisDv(base) === Number(d[10]);
+}
+
+/** Normaliza o PIS: usa o do cadastro se for válido, senão gera um novo. */
+function normalizarPis(valor?: string | null): string {
+  const d = (valor ?? "").replace(/\D/g, "");
+  return pisValido(d) ? d : gerarPis();
 }
 
 /**
  * Cria o aluno como usuário do relógio, com a matrícula como registration.
  * Endpoint e payload nativos do iDClass, conforme a documentação oficial:
  * POST /add_users.fcgi?session= com { users: [{ name, registration, pis }] }.
- * O firmware exige um PIS válido (11 dígitos com dígito verificador) — usa o
- * PIS gravado no cadastro do aluno ou gera um na hora. Alguns firmwares
- * esperam o PIS como número, outros como string: tenta número e refaz com
- * string se o equipamento recusar.
+ * O PIS vai sempre como string de exatamente 11 dígitos válidos.
  */
 export async function syncAluno(aluno: AlunoParaSincronizar) {
-  const pis = (aluno.pis && aluno.pis.trim()) || gerarPis();
-  const enviar = (pisValor: string | number) =>
-    withSession(async (session, cfg) =>
-      post(`/add_users.fcgi?session=${session}`, {
-        users: [{ name: aluno.nome, registration: String(aluno.matricula), pis: pisValor }],
-      }, cfg),
-    );
-  try {
-    return await enviar(Number(pis));
-  } catch (e: any) {
-    try {
-      return await enviar(pis);
-    } catch (e2: any) {
-      throw new Error(e2?.message || e?.message || "Falha ao cadastrar o aluno no relógio");
-    }
-  }
+  const pis = normalizarPis(aluno.pis);
+  return withSession(async (session, cfg) =>
+    post(`/add_users.fcgi?session=${session}`, {
+      users: [{ name: aluno.nome, registration: String(aluno.matricula), pis }],
+    }, cfg),
+  );
 }
 
 export interface AccessLog {
