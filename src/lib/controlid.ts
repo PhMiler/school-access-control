@@ -134,19 +134,49 @@ function normalizarPis(valor?: string | null): string {
   return pisValido(d) ? d : gerarPis();
 }
 
+/** Matrícula somente com números (mantém o original se não houver dígitos). */
+function normalizarMatricula(matricula: string): string {
+  const d = String(matricula).replace(/\D/g, "");
+  return d || String(matricula).trim();
+}
+
+/** Nome sem caracteres de controle, espaços duplicados nem excesso de tamanho. */
+function normalizarNome(nome: string): string {
+  return String(nome)
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
 /**
  * Cria o aluno como usuário do relógio, com a matrícula como registration.
  * Endpoint e payload nativos do iDClass, conforme a documentação oficial:
  * POST /add_users.fcgi?session= com { users: [{ name, registration, pis }] }.
- * O PIS vai sempre como string de exatamente 11 dígitos válidos.
+ * O PIS vai como string de 11 dígitos válidos; se o firmware recusar com 400,
+ * refaz a chamada uma vez com o PIS convertido para número.
  */
 export async function syncAluno(aluno: AlunoParaSincronizar) {
   const pis = normalizarPis(aluno.pis);
-  return withSession(async (session, cfg) =>
-    post(`/add_users.fcgi?session=${session}`, {
-      users: [{ name: aluno.nome, registration: String(aluno.matricula), pis }],
-    }, cfg),
-  );
+  const name = normalizarNome(aluno.nome);
+  const registration = normalizarMatricula(aluno.matricula);
+  const enviar = (pisValor: string | number) =>
+    withSession(async (session, cfg) =>
+      post(`/add_users.fcgi?session=${session}`, {
+        users: [{ name, registration, pis: pisValor }],
+      }, cfg),
+    );
+  try {
+    return await enviar(pis);
+  } catch (e: any) {
+    if (!/\b400\b/.test(String(e?.message ?? ""))) throw e;
+    try {
+      return await enviar(Number(pis));
+    } catch (e2: any) {
+      throw new Error(e2?.message || e?.message || "Falha ao cadastrar o aluno no relógio");
+    }
+  }
 }
 
 export interface AccessLog {
