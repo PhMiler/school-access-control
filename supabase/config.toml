@@ -1,7 +1,7 @@
-project_id = "xtlwblcatctuyucsksej"
+project_id = "vjzbxmoteigljxphlcad"
 
 [functions.admin-users]
-verify_jwt = true
+verify_jwt = false
 
 [functions.bootstrap-admin]
 verify_jwt = false

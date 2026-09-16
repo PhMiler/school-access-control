@@ -24,6 +24,30 @@ function json(body: unknown, status = 200) {
   });
 }
 
+// Traduz erros conhecidos (acionáveis pelo usuário) para PT-BR; qualquer outro erro
+// (interno/infra) é logado no servidor e só uma mensagem genérica volta ao cliente.
+function safeMessage(err: unknown, context: string): string {
+  const raw = (err as { message?: string })?.message ?? String(err);
+  console.error(`[admin-users:${context}]`, raw);
+
+  if (/already been registered|already registered|user_already_exists/i.test(raw)) {
+    return "Já existe um usuário cadastrado com esse e-mail.";
+  }
+  if (/duplicate key.*numero_usuario|profiles_numero_usuario/i.test(raw)) {
+    return "Número de usuário já em uso.";
+  }
+  if (/invalid format|unable to validate email/i.test(raw)) {
+    return "E-mail inválido.";
+  }
+  if (/password.*(least|characters|weak)/i.test(raw)) {
+    return "Senha muito fraca. Use pelo menos 6 caracteres.";
+  }
+  if (/foreign key constraint/i.test(raw)) {
+    return "Não é possível concluir: este usuário ainda possui registros vinculados.";
+  }
+  return "Não foi possível concluir a operação. Tente novamente em instantes.";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -68,9 +92,10 @@ Deno.serve(async (req) => {
         email: p.email, password: p.password, email_confirm: true,
         user_metadata: { nome: p.nome },
       });
-      if (cErr || !created.user) return json({ error: cErr?.message ?? "Falha ao criar" }, 400);
+      if (cErr || !created.user) return json({ error: safeMessage(cErr ?? new Error("Falha ao criar"), "create.createUser") }, 400);
 
-      const { error: pErr } = await admin.from("profiles").insert({
+      // O trigger on_auth_user_created já insere uma linha base em profiles; completar com upsert
+      const { error: pErr } = await admin.from("profiles").upsert({
         id: created.user.id,
         nome: p.nome, email: p.email,
         numero_usuario: p.numero_usuario,
@@ -79,7 +104,7 @@ Deno.serve(async (req) => {
       });
       if (pErr) {
         await admin.auth.admin.deleteUser(created.user.id);
-        return json({ error: pErr.message }, 400);
+        return json({ error: safeMessage(pErr, "create.profiles") }, 400);
       }
       return json({ ok: true, id: created.user.id });
     }
@@ -98,11 +123,11 @@ Deno.serve(async (req) => {
       if (p.password) authUpdates.password = p.password;
       if (Object.keys(authUpdates).length > 0) {
         const { error } = await admin.auth.admin.updateUserById(p.id, authUpdates as any);
-        if (error) return json({ error: error.message }, 400);
+        if (error) return json({ error: safeMessage(error, "update.auth") }, 400);
       }
       if (Object.keys(updates).length > 0) {
         const { error } = await admin.from("profiles").update(updates).eq("id", p.id);
-        if (error) return json({ error: error.message }, 400);
+        if (error) return json({ error: safeMessage(error, "update.profiles") }, 400);
       }
       return json({ ok: true });
     }
@@ -110,14 +135,15 @@ Deno.serve(async (req) => {
     if (p.action === "delete") {
       if (!p.id) return json({ error: "ID obrigatório" }, 400);
       if (p.id === callerId) return json({ error: "Não é possível excluir você mesmo" }, 400);
-      const { error: dErr } = await admin.auth.admin.deleteUser(p.id);
-      if (dErr) return json({ error: dErr.message }, 400);
+      // hard delete pode falhar com "Database error loading user" em contas com histórico; soft delete evita isso
+      const { error: dErr } = await admin.auth.admin.deleteUser(p.id, true);
+      if (dErr) return json({ error: safeMessage(dErr, "delete.auth") }, 400);
       await admin.from("profiles").delete().eq("id", p.id);
       return json({ ok: true });
     }
 
     return json({ error: "Ação inválida" }, 400);
   } catch (e: any) {
-    return json({ error: e?.message ?? "Erro interno" }, 500);
+    return json({ error: safeMessage(e, "unhandled") }, 500);
   }
 });

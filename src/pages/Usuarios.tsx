@@ -58,6 +58,15 @@ export default function Usuarios() {
 
   const profileName = (id: string | null) => profiles.find(p => p.id === id)?.nome ?? "—";
 
+  // supabase-js só expõe uma mensagem genérica; o corpo real do erro fica em error.context
+  const getFunctionErrorMessage = async (error: any) => {
+    try {
+      const body = await error?.context?.json();
+      if (body?.error) return typeof body.error === "string" ? body.error : JSON.stringify(body.error);
+    } catch { /* ignore */ }
+    return error?.message ?? "Erro desconhecido";
+  };
+
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -72,22 +81,24 @@ export default function Usuarios() {
       action,
       id: editing?.id,
       nome: parsed.data.nome,
-      email: parsed.data.email,
+      // só envia email se realmente mudou, evita chamada desnecessária ao GoTrue (auth.updateUserById)
+      email: editing && editing.email === parsed.data.email ? undefined : parsed.data.email,
       numero_usuario: parsed.data.numero_usuario,
       access_profile_id: parsed.data.access_profile_id,
       ativo: fd.get("ativo") === "on",
       password: parsed.data.password || undefined,
     };
+    if (action === "create") payload.email = parsed.data.email;
     const { error } = await supabase.functions.invoke("admin-users", { body: payload });
     setBusy(false);
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(await getFunctionErrorMessage(error));
     toast.success(editing ? "Usuário atualizado" : "Usuário cadastrado");
     setOpen(false); setEditing(null); load();
   };
 
   const remove = async (id: string) => {
     const { error } = await supabase.functions.invoke("admin-users", { body: { action: "delete", id } });
-    if (error) return toast.error(error.message);
+    if (error) return toast.error(await getFunctionErrorMessage(error));
     toast.success("Usuário excluído");
     load();
   };
